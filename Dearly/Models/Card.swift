@@ -25,6 +25,26 @@ final class Card {
     var dateReceived: Date?
     var notes: String?
     
+    // Extended properties for .dearly file format
+    var cardType: String?  // "flat" | "folded"
+    var aspectRatio: Double?
+    var createdAt: Date?
+    var updatedAt: Date?
+    
+    // AI Extraction Data (per .dearly file format spec)
+    var aiExtractedText: String?
+    var aiDetectedSender: String?
+    var aiDetectedOccasion: String?
+    var aiSentiment: String?  // "positive" | "neutral" | "negative"
+    var aiMentionedDates: [String]?
+    var aiKeywords: [String]?
+    var aiExtractionStatus: String?  // "pending" | "processing" | "complete" | "failed"
+    var aiLastExtractedAt: Date?
+    var aiProcessingStartedAt: Date?
+    var aiErrorType: String?
+    var aiErrorMessage: String?
+    var aiErrorRetryable: Bool?
+    
     init(
         id: UUID = UUID(),
         frontImagePath: String? = nil,

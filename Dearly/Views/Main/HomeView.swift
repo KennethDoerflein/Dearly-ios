@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
@@ -15,6 +16,11 @@ struct HomeView: View {
     @State private var showingDevSettings = false
     @State private var showBulkDeleteConfirmation = false
     @FocusState private var isSearchFocused: Bool
+    
+    // Import state
+    @State private var showingImportAlert = false
+    @State private var importMessage = ""
+    @State private var importSucceeded = false
     
     // Check if running in DEBUG mode for dev settings visibility
     #if DEBUG
@@ -267,6 +273,54 @@ struct HomeView: View {
         } message: {
             Text("These cards will be permanently deleted.")
         }
+        .alert(importSucceeded ? "Import Successful" : "Import Failed", isPresented: $showingImportAlert) {
+            Button("OK") {
+                if importSucceeded {
+                    viewModel.loadCards()
+                }
+            }
+        } message: {
+            Text(importMessage)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dearlyFileOpened)) { notification in
+            handleDearlyFileImport(notification: notification)
+        }
+    }
+    
+    // MARK: - File Import Handling
+    
+    private func handleDearlyFileImport(notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL else { return }
+        
+        // Access the file securely
+        guard url.startAccessingSecurityScopedResource() else {
+            importMessage = "Could not access the selected file"
+            importSucceeded = false
+            showingImportAlert = true
+            return
+        }
+        
+        defer {
+            url.stopAccessingSecurityScopedResource()
+        }
+        
+        do {
+            let card = try DearlyFileService.shared.importCard(from: url, using: modelContext)
+            importMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
+            importSucceeded = true
+            
+            // Haptic feedback
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+        } catch let error as DearlyFileError {
+            importMessage = error.localizedDescription
+            importSucceeded = false
+        } catch {
+            importMessage = error.localizedDescription
+            importSucceeded = false
+        }
+        
+        showingImportAlert = true
     }
 }
 

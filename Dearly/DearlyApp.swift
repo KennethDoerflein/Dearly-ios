@@ -31,11 +31,25 @@ struct DearlyApp: App {
                 }
             }
             .onOpenURL { url in
-                // Handle deep links with Superwall
-                Superwall.handleDeepLink(url)
+                handleOpenURL(url)
             }
         }
         .modelContainer(for: Card.self)
+    }
+    
+    private func handleOpenURL(_ url: URL) {
+        // Check if it's a .dearly file
+        if url.pathExtension.lowercased() == "dearly" {
+            // Post notification for HomeView to handle the import (it has access to modelContext)
+            NotificationCenter.default.post(
+                name: .dearlyFileOpened,
+                object: nil,
+                userInfo: ["url": url]
+            )
+        } else {
+            // Handle deep links with Superwall
+            Superwall.handleDeepLink(url)
+        }
     }
     
     /// Removes old UserDefaults data that was used before SwiftData migration
@@ -47,3 +61,10 @@ struct DearlyApp: App {
         }
     }
 }
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let dearlyFileOpened = Notification.Name("dearlyFileOpened")
+}
+

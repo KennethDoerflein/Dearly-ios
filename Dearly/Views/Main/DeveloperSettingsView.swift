@@ -8,11 +8,19 @@
 import SwiftUI
 import SwiftData
 import SuperwallKit
+import UniformTypeIdentifiers
 
 struct DeveloperSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @ObservedObject var viewModel: CardsViewModel
     @Binding var hasCompletedOnboarding: Bool
+    
+    // Import state
+    @State private var showingFilePicker = false
+    @State private var showingImportResult = false
+    @State private var importResultMessage = ""
+    @State private var importSucceeded = false
     
     var body: some View {
         NavigationStack {
@@ -93,6 +101,19 @@ struct DeveloperSettingsView: View {
                         }
                     }
                 }
+                
+                Section(header: Text("File Import/Export")) {
+                    Button(action: {
+                        showingFilePicker = true
+                    }) {
+                        HStack {
+                            Image(systemName: "square.and.arrow.down.fill")
+                                .foregroundColor(.cyan)
+                            Text("Import .dearly File")
+                            Spacer()
+                        }
+                    }
+                }
             }
             .navigationTitle("Developer Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -104,6 +125,22 @@ struct DeveloperSettingsView: View {
                     }
                 }
             }
+            .fileImporter(
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                handleFileImport(result: result)
+            }
+            .alert(importSucceeded ? "Import Successful" : "Import Failed", isPresented: $showingImportResult) {
+                Button("OK") {
+                    if importSucceeded {
+                        viewModel.loadCards()
+                    }
+                }
+            } message: {
+                Text(importResultMessage)
+            }
         }
     }
     
@@ -111,6 +148,53 @@ struct DeveloperSettingsView: View {
         // Register a test placement to trigger a paywall
         Superwall.shared.register(placement: "test_paywall") {
             print("✅ Feature unlocked! User has access.")
+        }
+    }
+    
+    private func handleFileImport(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let fileURL = urls.first else {
+                importResultMessage = "No file selected"
+                importSucceeded = false
+                showingImportResult = true
+                return
+            }
+            
+            // Access the file securely
+            guard fileURL.startAccessingSecurityScopedResource() else {
+                importResultMessage = "Could not access the selected file"
+                importSucceeded = false
+                showingImportResult = true
+                return
+            }
+            
+            defer {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+            
+            do {
+                let card = try DearlyFileService.shared.importCard(from: fileURL, using: modelContext)
+                importResultMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
+                importSucceeded = true
+                
+                // Haptic feedback
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+            } catch let error as DearlyFileError {
+                importResultMessage = error.localizedDescription
+                importSucceeded = false
+            } catch {
+                importResultMessage = error.localizedDescription
+                importSucceeded = false
+            }
+            
+            showingImportResult = true
+            
+        case .failure(let error):
+            importResultMessage = error.localizedDescription
+            importSucceeded = false
+            showingImportResult = true
         }
     }
     
