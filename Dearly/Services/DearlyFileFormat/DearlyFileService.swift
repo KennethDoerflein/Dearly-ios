@@ -319,8 +319,8 @@ final class DearlyFileService {
         for fileURL in files {
             let fileName = fileURL.lastPathComponent
             let fileData = try Data(contentsOf: fileURL)
-            // Use DEFLATE for all files
-            try zipWriter.addEntry(name: fileName, data: fileData, compressionMethod: .deflate)
+            // Use STORE (no compression) per spec v1.1 recommendation - images are already compressed
+            try zipWriter.addEntry(name: fileName, data: fileData, compressionMethod: .store)
         }
         
         let zipData = try zipWriter.finalize()

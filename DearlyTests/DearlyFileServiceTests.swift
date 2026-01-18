@@ -62,6 +62,11 @@ struct DearlyFileServiceTests {
         // Check local file header signature
         #expect(data.prefix(4) == Data([0x50, 0x4B, 0x03, 0x04]))
         
+        // Verify Compression Method is STORE (0)
+        // Offset 8 (2 bytes)
+        let compressionMethod = data.subdata(in: 8..<10).withUnsafeBytes { $0.load(as: UInt16.self).littleEndian }
+        #expect(compressionMethod == 0, "Expected STORE compression (0), but got \(compressionMethod)")
+        
         // 2. Test Import
         // Import into same context (it will create a NEW card with NEW ID per spec)
         let importedCard = try service.importCard(from: exportURL, using: mainContext)
