@@ -25,6 +25,8 @@ struct CardDetailView: View {
     @State private var particleOffset: CGFloat = 0
     @State private var heartScale: CGFloat = 1.0
     @State private var selectedPage: CardPage = .front
+    @State private var rotateClockwiseTrigger = false
+    @State private var rotateCounterClockwiseTrigger = false
     
     private var card: Card? {
         viewModel.cards.first { $0.id == cardId }
@@ -77,6 +79,12 @@ struct CardDetailView: View {
                                 heartScale = 1.0
                             }
                         }
+                        
+                        // Rotation controls for vertical text
+                        RotationButtonGroup(
+                            onRotateLeft: { rotateCounterClockwiseTrigger.toggle() },
+                            onRotateRight: { rotateClockwiseTrigger.toggle() }
+                        )
                     }
                     .padding(.leading, 20)
                     
@@ -128,9 +136,15 @@ struct CardDetailView: View {
                     
                     // Animated Card
                     if let card = card {
-                        AnimatedCardView(card: card, resetTrigger: $resetTrigger, selectedPage: $selectedPage)
-                            .padding(.horizontal, 20)
-                            .scaleEffect(heartScale)
+                        AnimatedCardView(
+                            card: card,
+                            resetTrigger: $resetTrigger,
+                            selectedPage: $selectedPage,
+                            rotateClockwiseTrigger: $rotateClockwiseTrigger,
+                            rotateCounterClockwiseTrigger: $rotateCounterClockwiseTrigger
+                        )
+                        .padding(.horizontal, 20)
+                        .scaleEffect(heartScale)
                     }
                 }
                 
@@ -325,6 +339,51 @@ struct GlassButton: View {
                 )
                 .shadow(color: color.opacity(0.2), radius: 8, x: 0, y: 4)
         }
+    }
+}
+
+// MARK: - Rotation Button Group Component
+struct RotationButtonGroup: View {
+    let onRotateLeft: () -> Void
+    let onRotateRight: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 2) {
+            Button(action: {
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                onRotateLeft()
+            }) {
+                Image(systemName: "rotate.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 36, height: 44)
+            }
+            
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: 1, height: 24)
+            
+            Button(action: {
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                onRotateRight()
+            }) {
+                Image(systemName: "rotate.right")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 36, height: 44)
+            }
+        }
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial.opacity(0.5))
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+            }
+        )
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
     }
 }
 

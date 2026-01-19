@@ -12,6 +12,8 @@ struct AnimatedCardView: View {
     let card: Card
     @Binding var resetTrigger: Bool
     @Binding var selectedPage: CardPage
+    @Binding var rotateClockwiseTrigger: Bool
+    @Binding var rotateCounterClockwiseTrigger: Bool
     
     @State private var isOpen = false
     @State private var xOffset: CGFloat = 0
@@ -21,6 +23,9 @@ struct AnimatedCardView: View {
     @State private var rotationY: Double = 0
     @State private var currentRotationX: Double = 0
     @State private var currentRotationY: Double = 0
+    
+    // Z-axis rotation for 90° turns (vertical text reading)
+    @State private var currentRotationZ: Double = 0
     
     // Zoom and pan state
     @State private var scale: CGFloat = 1.0
@@ -200,6 +205,8 @@ struct AnimatedCardView: View {
                 .degrees(currentRotationY + rotationY),
                 axis: (x: 0, y: 1, z: 0)
             )
+            // Z-axis rotation for reading vertical text
+            .rotationEffect(.degrees(currentRotationZ))
         }
         .frame(width: cardWidth, height: cardHeight)
         // Apply zoom and pan - OUTSIDE the frame so it can expand
@@ -325,6 +332,21 @@ struct AnimatedCardView: View {
         .onChange(of: selectedPage) { newPage in
             animateToPage(newPage)
         }
+        .onChange(of: rotateClockwiseTrigger) { _ in
+            rotate90Degrees(clockwise: true)
+        }
+        .onChange(of: rotateCounterClockwiseTrigger) { _ in
+            rotate90Degrees(clockwise: false)
+        }
+    }
+    
+    private func rotate90Degrees(clockwise: Bool) {
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+            currentRotationZ += clockwise ? 90 : -90
+        }
     }
     
     private func resetCard() {
@@ -335,6 +357,7 @@ struct AnimatedCardView: View {
             rotationY = 0
             currentRotationX = 0
             currentRotationY = 0
+            currentRotationZ = 0
             scale = 1.0
             panOffset = .zero
             lastPanOffset = .zero
@@ -395,7 +418,9 @@ struct AnimatedCardView: View {
         AnimatedCardView(
             card: Card(),
             resetTrigger: .constant(false),
-            selectedPage: .constant(.front)
+            selectedPage: .constant(.front),
+            rotateClockwiseTrigger: .constant(false),
+            rotateCounterClockwiseTrigger: .constant(false)
         )
         .padding()
     }
