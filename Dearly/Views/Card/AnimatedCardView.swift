@@ -30,10 +30,44 @@ struct AnimatedCardView: View {
     @State private var pinchLocation: CGPoint = .zero
     @State private var isPinching: Bool = false
 
-    private let cardWidth: CGFloat = 320
-    private let cardHeight: CGFloat = 224
-    private var pageWidth: CGFloat { cardWidth / 2 }
-    private let edgeThickness: CGFloat = 4
+    // Single page aspect ratio from front image (width/height of one page)
+    private var singlePageAspectRatio: CGFloat {
+        if let frontImage = card.frontImage {
+            let w = frontImage.size.width
+            let h = frontImage.size.height
+            if w > 0 && h > 0 {
+                return w / h
+            }
+        }
+        // Default: original single page ratio (160/224 ≈ 0.714)
+        return 160.0 / 224.0
+    }
+    
+    // Max dimensions to fit on screen
+    private let maxCardWidth: CGFloat = 340
+    private let maxCardHeight: CGFloat = 280
+    
+    // Calculate dimensions: card height is constrained, then page width derived from aspect ratio
+    private var cardHeight: CGFloat {
+        // Check if max height would make the full card too wide
+        let pageWidthAtMaxHeight = maxCardHeight * singlePageAspectRatio
+        if pageWidthAtMaxHeight * 2 <= maxCardWidth {
+            // Fits within width constraint at max height
+            return maxCardHeight
+        } else {
+            // Reduce height to fit width constraint
+            let maxPageWidth = maxCardWidth / 2
+            return maxPageWidth / singlePageAspectRatio
+        }
+    }
+    
+    private var pageWidth: CGFloat {
+        return cardHeight * singlePageAspectRatio
+    }
+    
+    private var cardWidth: CGFloat {
+        return pageWidth * 2
+    }
     private var normalizedRotationY: Double {
         var angle = (currentRotationY + rotationY).truncatingRemainder(dividingBy: 360)
         if angle > 180 { angle -= 360 }
@@ -41,15 +75,6 @@ struct AnimatedCardView: View {
         return angle
     }
     private var isFacingFront: Bool { abs(normalizedRotationY) <= 90 }
-    private func edgeGradient(forLeadingEdge leading: Bool) -> LinearGradient {
-        let shadow = Color.black.opacity(0.55)
-        let highlight = Color.white.opacity(0.5)
-        return LinearGradient(
-            colors: leading ? [shadow, highlight] : [highlight, shadow],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -71,12 +96,6 @@ struct AnimatedCardView: View {
                                 .overlay(Text("Back").foregroundColor(.white))
                         }
                     }
-                    .overlay(alignment: .leading) {
-                        thicknessEdge(isLeading: true, opacity: isOpen ? 0.7 : 0.45)
-                    }
-                    .overlay(alignment: .trailing) {
-                        thicknessEdge(isLeading: false, opacity: isOpen ? 0.25 : 0.15)
-                    }
                     // rotated so it's only visible from behind
                     .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                     .opacity((isOpen && isFacingFront) ? 0 : 1)
@@ -96,12 +115,6 @@ struct AnimatedCardView: View {
                                 .frame(width: pageWidth, height: cardHeight)
                                 .overlay(Text("Inside Right").foregroundColor(.black))
                         }
-                    }
-                    .overlay(alignment: .leading) {
-                        thicknessEdge(isLeading: true, opacity: isOpen ? 0.4 : 0.1)
-                    }
-                    .overlay(alignment: .trailing) {
-                        thicknessEdge(isLeading: false, opacity: isOpen ? 0.25 : 0.1)
                     }
                     .opacity((isOpen && isFacingFront) ? 1 : 0)
                     .animation((isOpen && isFacingFront) ? nil : .interpolatingSpring(mass: 1.0, stiffness: 100, damping: 15, initialVelocity: 0), value: isOpen) // Instant show when opening from front, smooth fade when closing
@@ -133,12 +146,6 @@ struct AnimatedCardView: View {
                                 .overlay(Text("Tap to Open").foregroundColor(.black))
                         }
                     }
-                    .overlay(alignment: .leading) {
-                        thicknessEdge(isLeading: true, opacity: isOpen ? 0.3 : 0.5)
-                    }
-                    .overlay(alignment: .trailing) {
-                        thicknessEdge(isLeading: false, opacity: isFacingFront ? 0.8 : 0.35)
-                    }
                     .opacity((isOpen && isFacingFront) ? 0 : 1)
                     
                     // INSIDE LEFT (visible when open)
@@ -155,12 +162,6 @@ struct AnimatedCardView: View {
                                 .frame(width: pageWidth, height: cardHeight)
                                 .overlay(Text("Inside Left").foregroundColor(.black))
                         }
-                    }
-                    .overlay(alignment: .leading) {
-                        thicknessEdge(isLeading: true, opacity: isOpen ? 0.35 : 0.15)
-                    }
-                    .overlay(alignment: .trailing) {
-                        thicknessEdge(isLeading: false, opacity: isOpen ? 0.5 : 0.25)
                     }
                     .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                     .opacity((isOpen && isFacingFront) ? 1 : 0)
@@ -324,15 +325,6 @@ struct AnimatedCardView: View {
         .onChange(of: selectedPage) { newPage in
             animateToPage(newPage)
         }
-    }
-    
-    @ViewBuilder
-    private func thicknessEdge(isLeading: Bool, opacity: Double) -> some View {
-        Rectangle()
-            .fill(edgeGradient(forLeadingEdge: isLeading))
-            .frame(width: edgeThickness)
-            .opacity(opacity)
-            .blur(radius: 0.25)
     }
     
     private func resetCard() {
