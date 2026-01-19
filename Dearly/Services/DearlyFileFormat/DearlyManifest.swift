@@ -9,15 +9,15 @@ import Foundation
 
 // MARK: - Format Constants
 
-/// Current supported format version
-let DearlyFormatVersion: Int = 1
+/// Current supported format version (major version for compatibility checks)
+let DearlyFormatVersion: Double = 1.1
 
 // MARK: - Top-Level Manifest
 
 /// The top-level manifest structure for a .dearly file
 struct DearlyManifest: Codable {
-    /// Format version number (currently 1)
-    let formatVersion: Int
+    /// Format version number (supports both integer like 1 and decimal like 1.1)
+    let formatVersion: Double
     
     /// ISO 8601 timestamp of when the file was created
     let exportedAt: String

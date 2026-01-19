@@ -19,7 +19,7 @@ enum DearlyFileError: LocalizedError {
     case invalidManifest(String)
     
     /// formatVersion is higher than supported
-    case unsupportedVersion(Int)
+    case unsupportedVersion(Double)
     
     /// Required image file referenced in manifest not found
     case missingImage(String)
