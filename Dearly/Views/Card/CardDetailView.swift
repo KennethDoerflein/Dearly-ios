@@ -262,32 +262,39 @@ struct CardDetailView: View {
     private func shareItems(for card: Card) -> [Any] {
         var items: [Any] = []
         
-        // Add card images
-        if let frontImage = card.frontImage {
-            items.append(frontImage)
+        // Try to export as .dearly file first
+        do {
+            let exportURL = try DearlyFileService.shared.exportCard(card)
+            items.append(exportURL)
+        } catch {
+            print("⚠️ Failed to export .dearly file: \(error.localizedDescription)")
+            // Fall back to sharing images directly
+            if let frontImage = card.frontImage {
+                items.append(frontImage)
+            }
+            if let backImage = card.backImage {
+                items.append(backImage)
+            }
+            if let insideLeftImage = card.insideLeftImage {
+                items.append(insideLeftImage)
+            }
+            if let insideRightImage = card.insideRightImage {
+                items.append(insideRightImage)
+            }
+            
+            // Add text with metadata
+            var text = "Shared from Dearly"
+            if let sender = card.sender {
+                text += "\nFrom: \(sender)"
+            }
+            if let occasion = card.occasion {
+                text += "\n\(occasion)"
+            }
+            if let notes = card.notes {
+                text += "\n\n\(notes)"
+            }
+            items.append(text)
         }
-        if let backImage = card.backImage {
-            items.append(backImage)
-        }
-        if let insideLeftImage = card.insideLeftImage {
-            items.append(insideLeftImage)
-        }
-        if let insideRightImage = card.insideRightImage {
-            items.append(insideRightImage)
-        }
-        
-        // Add text with metadata
-        var text = "Shared from Dearly"
-        if let sender = card.sender {
-            text += "\nFrom: \(sender)"
-        }
-        if let occasion = card.occasion {
-            text += "\n\(occasion)"
-        }
-        if let notes = card.notes {
-            text += "\n\n\(notes)"
-        }
-        items.append(text)
         
         return items
     }

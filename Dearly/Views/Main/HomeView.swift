@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
@@ -15,6 +16,11 @@ struct HomeView: View {
     @State private var showingDevSettings = false
     @State private var showBulkDeleteConfirmation = false
     @FocusState private var isSearchFocused: Bool
+    
+    // Import state
+    @State private var showingImportAlert = false
+    @State private var importMessage = ""
+    @State private var importSucceeded = false
     
     // Check if running in DEBUG mode for dev settings visibility
     #if DEBUG
@@ -267,6 +273,66 @@ struct HomeView: View {
         } message: {
             Text("These cards will be permanently deleted.")
         }
+        .alert(importSucceeded ? "Import Successful" : "Import Failed", isPresented: $showingImportAlert) {
+            Button("OK") {
+                if importSucceeded {
+                    viewModel.loadCards()
+                }
+            }
+        } message: {
+            Text(importMessage)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dearlyFileOpened)) { notification in
+            handleDearlyFileImport(notification: notification)
+        }
+    }
+    
+    // MARK: - File Import Handling
+    
+    private func handleDearlyFileImport(notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL else { return }
+        
+        // Try to start accessing security-scoped resource (may return false for non-scoped URLs)
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        do {
+            // Copy file to temp directory to ensure we have access
+            let tempURL = try copyToTempDirectory(url: url)
+            defer {
+                try? FileManager.default.removeItem(at: tempURL)
+            }
+            
+            let card = try DearlyFileService.shared.importCard(from: tempURL, using: modelContext)
+            importMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
+            importSucceeded = true
+            
+            // Haptic feedback
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+        } catch let error as DearlyFileError {
+            importMessage = error.localizedDescription
+            importSucceeded = false
+        } catch {
+            importMessage = "Could not access the selected file: \(error.localizedDescription)"
+            importSucceeded = false
+        }
+        
+        showingImportAlert = true
+    }
+    
+    /// Copies a file to a temporary directory to ensure access
+    private func copyToTempDirectory(url: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let tempURL = tempDir.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.copyItem(at: url, to: tempURL)
+        return tempURL
     }
 }
 
