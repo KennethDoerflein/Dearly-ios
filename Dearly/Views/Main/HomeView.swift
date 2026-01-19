@@ -292,20 +292,23 @@ struct HomeView: View {
     private func handleDearlyFileImport(notification: Notification) {
         guard let url = notification.userInfo?["url"] as? URL else { return }
         
-        // Access the file securely
-        guard url.startAccessingSecurityScopedResource() else {
-            importMessage = "Could not access the selected file"
-            importSucceeded = false
-            showingImportAlert = true
-            return
-        }
+        // Try to start accessing security-scoped resource (may return false for non-scoped URLs)
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
         
         defer {
-            url.stopAccessingSecurityScopedResource()
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
         
         do {
-            let card = try DearlyFileService.shared.importCard(from: url, using: modelContext)
+            // Copy file to temp directory to ensure we have access
+            let tempURL = try copyToTempDirectory(url: url)
+            defer {
+                try? FileManager.default.removeItem(at: tempURL)
+            }
+            
+            let card = try DearlyFileService.shared.importCard(from: tempURL, using: modelContext)
             importMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
             importSucceeded = true
             
@@ -316,11 +319,20 @@ struct HomeView: View {
             importMessage = error.localizedDescription
             importSucceeded = false
         } catch {
-            importMessage = error.localizedDescription
+            importMessage = "Could not access the selected file: \(error.localizedDescription)"
             importSucceeded = false
         }
         
         showingImportAlert = true
+    }
+    
+    /// Copies a file to a temporary directory to ensure access
+    private func copyToTempDirectory(url: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let tempURL = tempDir.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.copyItem(at: url, to: tempURL)
+        return tempURL
     }
 }
 

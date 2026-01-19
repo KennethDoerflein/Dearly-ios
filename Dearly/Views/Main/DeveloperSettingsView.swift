@@ -161,20 +161,23 @@ struct DeveloperSettingsView: View {
                 return
             }
             
-            // Access the file securely
-            guard fileURL.startAccessingSecurityScopedResource() else {
-                importResultMessage = "Could not access the selected file"
-                importSucceeded = false
-                showingImportResult = true
-                return
-            }
+            // Try to start accessing security-scoped resource (may return false for non-scoped URLs)
+            let isSecurityScoped = fileURL.startAccessingSecurityScopedResource()
             
             defer {
-                fileURL.stopAccessingSecurityScopedResource()
+                if isSecurityScoped {
+                    fileURL.stopAccessingSecurityScopedResource()
+                }
             }
             
             do {
-                let card = try DearlyFileService.shared.importCard(from: fileURL, using: modelContext)
+                // Copy file to temp directory to ensure we have access
+                let tempURL = try copyToTempDirectory(url: fileURL)
+                defer {
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
+                
+                let card = try DearlyFileService.shared.importCard(from: tempURL, using: modelContext)
                 importResultMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
                 importSucceeded = true
                 
@@ -185,7 +188,7 @@ struct DeveloperSettingsView: View {
                 importResultMessage = error.localizedDescription
                 importSucceeded = false
             } catch {
-                importResultMessage = error.localizedDescription
+                importResultMessage = "Could not access the selected file: \(error.localizedDescription)"
                 importSucceeded = false
             }
             
@@ -196,6 +199,15 @@ struct DeveloperSettingsView: View {
             importSucceeded = false
             showingImportResult = true
         }
+    }
+    
+    /// Copies a file to a temporary directory to ensure access
+    private func copyToTempDirectory(url: URL) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let tempURL = tempDir.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.copyItem(at: url, to: tempURL)
+        return tempURL
     }
     
     private func resetOnboarding() {
