@@ -37,7 +37,7 @@ struct DearlyManifest: Codable {
     }
     
     /// Creates a manifest from decoded data
-    init(formatVersion: Int, exportedAt: String, card: DearlyCardData, images: DearlyImages) {
+    init(formatVersion: Double, exportedAt: String, card: DearlyCardData, images: DearlyImages) {
         self.formatVersion = formatVersion
         self.exportedAt = exportedAt
         self.card = card
