@@ -30,9 +30,10 @@ final class DearlyFileService {
     
     /// Exports a card to a .dearly file
     /// - Parameter card: The card to export
+    /// - Parameter includeHistory: Whether to include version history (default: true)
     /// - Returns: URL to the exported .dearly file
     /// - Throws: DearlyFileError if export fails
-    func exportCard(_ card: Card) throws -> URL {
+    func exportCard(_ card: Card, includeHistory: Bool = true) throws -> URL {
         // Create temporary directory for building the archive
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -81,15 +82,59 @@ final class DearlyFileService {
             insideRight: insideRightFilename
         )
         
+        // Build version history for manifest (spec-compliant format)
+        var dearlyHistory: [DearlyVersionSnapshot]? = nil
+        if includeHistory, let history = card.versionHistory, !history.isEmpty {
+            dearlyHistory = history.map { DearlyVersionSnapshot.from($0) }
+        }
+        
         // Build manifest
         let cardData = DearlyCardData.from(card)
-        let manifest = DearlyManifest(card: cardData, images: images)
+        let manifest = DearlyManifest(card: cardData, images: images, versionHistory: dearlyHistory)
         
         // Write manifest.json
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        
         let manifestData = try encoder.encode(manifest)
         try manifestData.write(to: tempDir.appendingPathComponent("manifest.json"))
+        
+        // Export Version History Images
+        if includeHistory, let history = card.versionHistory {
+            for snapshot in history {
+                for change in snapshot.imageChanges {
+                    // change.previousUri is relative path like "CardImages/{cardId}/versions/v1/front.jpg"
+                    // We want to store it in ZIP as "versions/v1/front.jpg"
+                    
+                    // 1. Locate source file
+                    if let sourceURL = imageStorage.getImageURL(for: change.previousUri),
+                       fileManager.fileExists(atPath: sourceURL.path) {
+                        
+                        // 2. Determine dest path in ZIP
+                        // We strip the prefix "CardImages/{uuid}/" if present to get clean relative path
+                        let relativePath: String
+                        if change.previousUri.contains("/versions/") {
+                             let components = change.previousUri.components(separatedBy: "/versions/")
+                             if components.count > 1 {
+                                 relativePath = "versions/" + components[1]
+                             } else {
+                                 continue
+                             }
+                        } else {
+                            continue
+                        }
+                        
+                        let destURL = tempDir.appendingPathComponent(relativePath)
+                        
+                        // Create subdirectories
+                        try fileManager.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        
+                        // Copy file
+                        try fileManager.copyItem(at: sourceURL, to: destURL)
+                    }
+                }
+            }
+        }
         
         // Create ZIP archive
         let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -198,6 +243,57 @@ final class DearlyFileService {
             )
         }
         
+        // Processing Version History Import (from top-level per spec)
+        var importedHistory: [CardVersionSnapshot]? = nil
+        
+        if let dearlyHistory = manifest.versionHistory, !dearlyHistory.isEmpty {
+            var history: [CardVersionSnapshot] = []
+            
+            for dearlySnapshot in dearlyHistory {
+                var updatedImageChanges: [ImageChange] = []
+                
+                for dearlyChange in dearlySnapshot.imageChanges {
+                    // dearlyChange.previousFilename is relative path like "versions/v1/front.jpg"
+                    let sourceURL = tempDir.appendingPathComponent(dearlyChange.previousFilename)
+                    
+                    if fileManager.fileExists(atPath: sourceURL.path) {
+                        let versionDirName = "v\(dearlySnapshot.versionNumber)"
+                        let fileName = sourceURL.lastPathComponent
+                        
+                        let cardVersionsDir = imageStorage.getImageURL(for: "")!
+                            .appendingPathComponent("CardImages")
+                            .appendingPathComponent(newCardId.uuidString)
+                            .appendingPathComponent("versions")
+                            .appendingPathComponent(versionDirName)
+                        
+                        do {
+                            try fileManager.createDirectory(at: cardVersionsDir, withIntermediateDirectories: true)
+                            let destURL = cardVersionsDir.appendingPathComponent(fileName)
+                            
+                            try fileManager.copyItem(at: sourceURL, to: destURL)
+                            
+                            let newPath = "CardImages/\(newCardId.uuidString)/versions/\(versionDirName)/\(fileName)"
+                            let slotEnum = ImageSlot(rawValue: dearlyChange.slot) ?? .front
+                            updatedImageChanges.append(ImageChange(slot: slotEnum, previousUri: newPath))
+                        } catch {
+                            print("⚠️ Failed to import version image: \(error)")
+                        }
+                    }
+                }
+                
+                // Convert to internal format
+                let isoFormatter = ISO8601DateFormatter()
+                let snapshot = CardVersionSnapshot(
+                    versionNumber: dearlySnapshot.versionNumber,
+                    editedAt: isoFormatter.date(from: dearlySnapshot.editedAt) ?? Date(),
+                    metadataChanges: dearlySnapshot.metadataChanges.map { $0.toMetadataChange() },
+                    imageChanges: updatedImageChanges
+                )
+                history.append(snapshot)
+            }
+            importedHistory = history
+        }
+        
         // Parse dates
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
@@ -219,7 +315,8 @@ final class DearlyFileService {
             sender: manifest.card.sender,
             occasion: manifest.card.occasion,
             dateReceived: cardDate,
-            notes: manifest.card.notes
+            notes: manifest.card.notes,
+            versionHistory: importedHistory // Set imported history
         )
         
         // Set extended properties

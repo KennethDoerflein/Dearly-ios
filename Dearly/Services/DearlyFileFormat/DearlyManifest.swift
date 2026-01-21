@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Format Constants
 
 /// Current supported format version (major version for compatibility checks)
-let DearlyFormatVersion: Double = 1.1
+let DearlyFormatVersion: Double = 2
 
 // MARK: - Top-Level Manifest
 
@@ -28,20 +28,25 @@ struct DearlyManifest: Codable {
     /// Image filename mapping
     let images: DearlyImages
     
+    /// Version history (optional, v2 feature - at top level per spec)
+    let versionHistory: [DearlyVersionSnapshot]?
+    
     /// Creates a manifest for export
-    init(card: DearlyCardData, images: DearlyImages) {
-        self.formatVersion = DearlyFormatVersion
+    init(card: DearlyCardData, images: DearlyImages, versionHistory: [DearlyVersionSnapshot]? = nil) {
+        self.formatVersion = versionHistory != nil ? 2 : DearlyFormatVersion
         self.exportedAt = ISO8601DateFormatter().string(from: Date())
         self.card = card
         self.images = images
+        self.versionHistory = versionHistory
     }
     
     /// Creates a manifest from decoded data
-    init(formatVersion: Double, exportedAt: String, card: DearlyCardData, images: DearlyImages) {
+    init(formatVersion: Double, exportedAt: String, card: DearlyCardData, images: DearlyImages, versionHistory: [DearlyVersionSnapshot]? = nil) {
         self.formatVersion = formatVersion
         self.exportedAt = exportedAt
         self.card = card
         self.images = images
+        self.versionHistory = versionHistory
     }
 }
 
@@ -217,4 +222,98 @@ struct DearlyAIExtractedData: Codable {
     
     /// Error details if extraction failed
     let error: DearlyExtractionError?
+}
+
+// MARK: - Version History (Spec v1.2)
+
+/// Version snapshot for .dearly file format (spec-compliant)
+struct DearlyVersionSnapshot: Codable {
+    let versionNumber: Int
+    let editedAt: String  // ISO 8601
+    let metadataChanges: [DearlyMetadataChange]
+    let imageChanges: [DearlyImageChange]
+    
+    /// Convert from internal CardVersionSnapshot
+    static func from(_ snapshot: CardVersionSnapshot) -> DearlyVersionSnapshot {
+        let isoFormatter = ISO8601DateFormatter()
+        return DearlyVersionSnapshot(
+            versionNumber: snapshot.versionNumber,
+            editedAt: isoFormatter.string(from: snapshot.editedAt),
+            metadataChanges: snapshot.metadataChanges.map { DearlyMetadataChange.from($0) },
+            imageChanges: snapshot.imageChanges.map { DearlyImageChange.from($0) }
+        )
+    }
+    
+    /// Convert to internal CardVersionSnapshot
+    func toCardVersionSnapshot() -> CardVersionSnapshot {
+        let isoFormatter = ISO8601DateFormatter()
+        return CardVersionSnapshot(
+            versionNumber: versionNumber,
+            editedAt: isoFormatter.date(from: editedAt) ?? Date(),
+            metadataChanges: metadataChanges.map { $0.toMetadataChange() },
+            imageChanges: imageChanges.map { $0.toImageChange() }
+        )
+    }
+}
+
+/// Metadata change for .dearly file format (spec field name: "field")
+struct DearlyMetadataChange: Codable {
+    let field: String  // Spec uses string, not enum
+    let previousValue: String?
+    let newValue: String?
+    
+    static func from(_ change: MetadataChange) -> DearlyMetadataChange {
+        DearlyMetadataChange(
+            field: change.field.rawValue.lowercased(),  // Spec uses lowercase
+            previousValue: change.previousValue,
+            newValue: change.newValue
+        )
+    }
+    
+    func toMetadataChange() -> MetadataChange {
+        // Map spec field names back to enum
+        let fieldEnum: MetadataField
+        switch field.lowercased() {
+        case "sender": fieldEnum = .sender
+        case "occasion": fieldEnum = .occasion
+        case "date received", "datereceived": fieldEnum = .dateReceived
+        case "notes": fieldEnum = .notes
+        default: fieldEnum = .notes  // Fallback
+        }
+        return MetadataChange(field: fieldEnum, previousValue: previousValue, newValue: newValue)
+    }
+}
+
+/// Image change for .dearly file format (spec uses "previousFilename")
+struct DearlyImageChange: Codable {
+    let slot: String  // Spec uses string
+    let previousFilename: String  // Spec field name
+    
+    static func from(_ change: ImageChange) -> DearlyImageChange {
+        // Extract just the filename from the full path for the ZIP
+        // e.g., "CardImages/uuid/versions/v1/front.jpg" -> "versions/v1/front.jpg"
+        let filename: String
+        if let range = change.previousUri.range(of: "versions/") {
+            filename = String(change.previousUri[range.lowerBound...])
+        } else {
+            filename = change.previousUri
+        }
+        return DearlyImageChange(
+            slot: change.slot.rawValue,
+            previousFilename: filename
+        )
+    }
+    
+    func toImageChange(withBasePath basePath: String = "") -> ImageChange {
+        let slotEnum: ImageSlot
+        switch slot.lowercased() {
+        case "front": slotEnum = .front
+        case "back": slotEnum = .back
+        case "insideleft": slotEnum = .insideLeft
+        case "insideright": slotEnum = .insideRight
+        default: slotEnum = .front  // Fallback
+        }
+        // The basePath will be prepended during import
+        return ImageChange(slot: slotEnum, previousUri: basePath + previousFilename)
+    }
 }

@@ -155,4 +155,84 @@ struct DearlyFileServiceTests {
         // Cleanup
         try? FileManager.default.removeItem(at: exportURL)
     }
+    
+    @Test func testExportImportWithHistory() async throws {
+        // Setup
+        let service = DearlyFileService.shared
+        let schema = Schema([Card.self])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let mainContext = ModelContext(try ModelContainer(for: schema, configurations: [modelConfiguration]))
+        
+        let cardId = UUID()
+        let storage = ImageStorageService.shared
+        
+        // Create initial image
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
+        let imgA = renderer.image { ctx in
+            UIColor.red.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        }
+        let frontPathA = storage.saveImage(imgA, for: cardId, side: .front)!
+        
+        // Create initial card
+        let card = Card(
+            id: cardId,
+            frontImagePath: frontPathA,
+            sender: "Original Sender"
+        )
+        mainContext.insert(card)
+        
+        // Add a snapshot (simulating logic from Card+VersionHistory)
+        // We'll manually create a history entry
+        let imgB = renderer.image { ctx in
+            UIColor.green.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        }
+        
+        // Simulate: Saved version image (of state A)
+        let versionPath = storage.saveVersionImage(from: frontPathA, for: cardId, versionNumber: 1)!
+        
+        // Update card to state B
+        let frontPathB = storage.saveImage(imgB, for: cardId, side: .front)!
+        card.frontImagePath = frontPathB
+        card.sender = "New Sender"
+        
+        // Add snapshot
+        let metadataChanges = [MetadataChange(field: .sender, previousValue: "Original Sender", newValue: "New Sender")]
+        let imageChanges = [ImageChange(slot: .front, previousUri: versionPath)]
+        
+        card.addSnapshot(metadataChanges: metadataChanges, imageChanges: imageChanges)
+        
+        // 1. Test Export (current card state B + history of A)
+        let exportURL = try service.exportCard(card, includeHistory: true)
+        #expect(FileManager.default.fileExists(atPath: exportURL.path))
+        
+        // 2. Test Import
+        let importedCard = try service.importCard(from: exportURL, using: mainContext)
+        
+        // Verify current state (B)
+        #expect(importedCard.sender == "New Sender")
+        #expect(importedCard.id != card.id)
+        
+        // Verify History
+        #expect(importedCard.versionHistory?.count == 1)
+        let snapshot = importedCard.versionHistory!.first!
+        #expect(snapshot.versionNumber == 1)
+        #expect(snapshot.metadataChanges.first?.field == .sender)
+        #expect(snapshot.metadataChanges.first?.previousValue == "Original Sender")
+        
+        // Verify Versioned Image
+        let versionImageChange = snapshot.imageChanges.first!
+        #expect(versionImageChange.slot == .front)
+        
+        // Check if the file exists at the imported location
+        let importedVersionPath = versionImageChange.previousUri
+        #expect(importedVersionPath.contains("versions/v1/"))
+        
+        let importedVersionURL = storage.getImageURL(for: importedVersionPath)!
+        #expect(FileManager.default.fileExists(atPath: importedVersionURL.path))
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: exportURL)
+    }
 }

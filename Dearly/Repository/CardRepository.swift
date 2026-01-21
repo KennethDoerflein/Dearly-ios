@@ -8,6 +8,9 @@
 import Foundation
 import SwiftData
 import UIKit
+import os.log
+
+private let logger = Logger(subsystem: "com.dearly.app", category: "CardRepository")
 
 /// Repository for managing Card persistence with SwiftData
 /// Handles coordination between SwiftData and ImageStorageService
@@ -31,7 +34,7 @@ final class CardRepository {
         do {
             return try modelContext.fetch(descriptor)
         } catch {
-            print("❌ Failed to fetch cards: \(error.localizedDescription)")
+            logger.error("Failed to fetch cards: \(error.localizedDescription)")
             return []
         }
     }
@@ -62,13 +65,56 @@ final class CardRepository {
         do {
             try modelContext.save()
         } catch {
-            print("❌ Failed to save context: \(error.localizedDescription)")
+            logger.error("Failed to save context: \(error.localizedDescription)")
         }
+    }
+    
+    // MARK: - Metadata Update
+    
+    /// Updates card metadata and creates a version snapshot if changes were made
+    func updateCardMetadata(
+        _ card: Card,
+        sender: String?,
+        occasion: String?,
+        dateReceived: Date?,
+        notes: String?
+    ) {
+        var changes: [MetadataChange] = []
+        
+        if let change = Card.compare(.sender, old: card.sender, new: sender) {
+            changes.append(change)
+        }
+        
+        if let change = Card.compare(.occasion, old: card.occasion, new: occasion) {
+            changes.append(change)
+        }
+        
+        if let change = Card.compare(.dateReceived, old: card.dateReceived, new: dateReceived) {
+            changes.append(change)
+        }
+        
+        if let change = Card.compare(.notes, old: card.notes, new: notes) {
+            changes.append(change)
+        }
+        
+        // Create snapshot BEFORE applying changes
+        if !changes.isEmpty {
+            card.addSnapshot(metadataChanges: changes, imageChanges: [])
+        }
+        
+        // Apply changes
+        card.sender = sender
+        card.occasion = occasion
+        card.dateReceived = dateReceived
+        card.notes = notes
+        
+        save()
+        logger.info("Updated metadata for card \(card.id)")
     }
     
     // MARK: - Image Operations
     
-    /// Saves images for a card and returns the file paths
+    /// Saves images and creates a SINGLE snapshot for all image changes
     func saveImages(
         frontImage: UIImage?,
         backImage: UIImage?,
@@ -76,10 +122,41 @@ final class CardRepository {
         insideRightImage: UIImage?,
         for cardId: UUID
     ) -> (front: String?, back: String?, insideLeft: String?, insideRight: String?) {
-        let frontPath = frontImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.front) }
-        let backPath = backImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.back) }
-        let insideLeftPath = insideLeftImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.insideLeft) }
-        let insideRightPath = insideRightImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.insideRight) }
+        
+        var currentCard: Card?
+        var imageChanges: [ImageChange] = []
+        
+        let descriptor = FetchDescriptor<Card>(predicate: #Predicate { $0.id == cardId })
+        if let card = try? modelContext.fetch(descriptor).first {
+            currentCard = card
+        }
+        
+        // Calculate next version number ONCE for all changes in this batch
+        let nextVersion = (currentCard?.versionHistory?.map { $0.versionNumber }.max() ?? 0) + 1
+        
+        func processImage(_ newImage: UIImage?, currentPath: String?, side: ImageSide, slot: ImageSlot) -> String? {
+            guard let newImage = newImage else { return nil }
+            
+            if let currentPath = currentPath, imageStorage.imageExists(at: currentPath) {
+                if let versionPath = imageStorage.saveVersionImage(from: currentPath, for: cardId, versionNumber: nextVersion) {
+                    imageChanges.append(ImageChange(slot: slot, previousUri: versionPath))
+                }
+            }
+            
+            return imageStorage.saveImage(newImage, for: cardId, side: side)
+        }
+        
+        let frontPath = processImage(frontImage, currentPath: currentCard?.frontImagePath, side: .front, slot: .front)
+        let backPath = processImage(backImage, currentPath: currentCard?.backImagePath, side: .back, slot: .back)
+        let insideLeftPath = processImage(insideLeftImage, currentPath: currentCard?.insideLeftImagePath, side: .insideLeft, slot: .insideLeft)
+        let insideRightPath = processImage(insideRightImage, currentPath: currentCard?.insideRightImagePath, side: .insideRight, slot: .insideRight)
+        
+        // Create ONE snapshot for ALL image changes in this batch
+        if !imageChanges.isEmpty, let card = currentCard {
+            card.addSnapshot(metadataChanges: [], imageChanges: imageChanges)
+            save()
+            logger.info("Created snapshot v\(nextVersion) with \(imageChanges.count) image change(s)")
+        }
         
         return (frontPath, backPath, insideLeftPath, insideRightPath)
     }
@@ -95,3 +172,4 @@ final class CardRepository {
         imageStorage.clearAllImages()
     }
 }
+
