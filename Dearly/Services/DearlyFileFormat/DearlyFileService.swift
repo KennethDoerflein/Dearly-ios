@@ -164,7 +164,78 @@ final class DearlyFileService {
         return exportURL
     }
     
-    // MARK: - Import
+    // MARK: - Unified Import
+    
+    /// Result of a unified import operation
+    enum ImportResult {
+        /// Single card was imported directly
+        case singleCard(Card)
+        /// Backup bundle detected - returns previews for selection
+        case backupBundle([BundlePreview])
+    }
+    
+    /// Detects the file type and either imports a single card or returns previews for a backup bundle
+    /// - Parameters:
+    ///   - url: URL to the .dearly file
+    ///   - modelContext: SwiftData model context for saving the card (used for single card import)
+    /// - Returns: ImportResult indicating what was imported or previews for selection
+    /// - Throws: DearlyFileError if file cannot be read
+    func detectAndImport(from url: URL, using modelContext: ModelContext) throws -> ImportResult {
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        defer {
+            try? fileManager.removeItem(at: tempDir)
+        }
+        
+        try extractZipArchive(from: url, to: tempDir)
+        
+        let manifestURL = tempDir.appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            throw DearlyFileError.missingManifest
+        }
+        
+        let manifestData = try Data(contentsOf: manifestURL)
+        let manifest = try JSONDecoder().decode(DearlyManifest.self, from: manifestData)
+        
+        if manifest.formatVersion > DearlyFormatVersion {
+            throw DearlyFileError.unsupportedVersion(manifest.formatVersion)
+        }
+        
+        // Check if this is a backup bundle
+        if manifest.bundleType == .backup || manifest.cards != nil {
+            // Return previews for backup bundle
+            guard let cards = manifest.cards, !cards.isEmpty else {
+                throw DearlyFileError.invalidManifest("Backup bundle has no cards")
+            }
+            
+            var previews: [BundlePreview] = []
+            
+            for cardData in cards {
+                var thumbnail: Data? = nil
+                let frontImageURL = tempDir.appendingPathComponent(cardData.images.front)
+                if fileManager.fileExists(atPath: frontImageURL.path) {
+                    thumbnail = try? Data(contentsOf: frontImageURL)
+                }
+                
+                previews.append(BundlePreview(
+                    id: cardData.id,
+                    sender: cardData.sender,
+                    occasion: cardData.occasion,
+                    date: cardData.date,
+                    thumbnailData: thumbnail
+                ))
+            }
+            
+            return .backupBundle(previews)
+        }
+        
+        // Single card import - import directly
+        let card = try importCard(from: url, using: modelContext)
+        return .singleCard(card)
+    }
+    
+    // MARK: - Import (Single Card)
     
     /// Imports a card from a .dearly file
     /// - Parameters:
@@ -205,26 +276,36 @@ final class DearlyFileService {
             throw DearlyFileError.unsupportedVersion(manifest.formatVersion)
         }
         
+        // Check if this is a backup bundle
+        if manifest.bundleType == .backup || manifest.cards != nil {
+            throw DearlyFileError.backupBundleDetected
+        }
+        
+        // Validate single-card structure
+        guard let cardData = manifest.card, let images = manifest.images else {
+            throw DearlyFileError.invalidManifest("Missing card or images data for single card import")
+        }
+        
         // Generate new UUID per spec requirement
         let newCardId = UUID()
         
         // Extract and save images
         let frontPath = try saveImportedImage(
-            filename: manifest.images.front,
+            filename: images.front,
             from: tempDir,
             cardId: newCardId,
             side: .front
         )
         
         let backPath = try saveImportedImage(
-            filename: manifest.images.back,
+            filename: images.back,
             from: tempDir,
             cardId: newCardId,
             side: .back
         )
         
         var insideLeftPath: String? = nil
-        if let insideLeftFilename = manifest.images.insideLeft {
+        if let insideLeftFilename = images.insideLeft {
             insideLeftPath = try saveImportedImage(
                 filename: insideLeftFilename,
                 from: tempDir,
@@ -234,7 +315,7 @@ final class DearlyFileService {
         }
         
         var insideRightPath: String? = nil
-        if let insideRightFilename = manifest.images.insideRight {
+        if let insideRightFilename = images.insideRight {
             insideRightPath = try saveImportedImage(
                 filename: insideRightFilename,
                 from: tempDir,
@@ -297,11 +378,11 @@ final class DearlyFileService {
         // Parse dates
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        let cardDate = dateFormatter.date(from: manifest.card.date)
+        let cardDate = dateFormatter.date(from: cardData.date)
         
         let isoFormatter = ISO8601DateFormatter()
-        let createdAt = manifest.card.createdAt.flatMap { isoFormatter.date(from: $0) }
-        let updatedAt = manifest.card.updatedAt.flatMap { isoFormatter.date(from: $0) }
+        let createdAt = cardData.createdAt.flatMap { isoFormatter.date(from: $0) }
+        let updatedAt = cardData.updatedAt.flatMap { isoFormatter.date(from: $0) }
         
         // Create the new card
         let card = Card(
@@ -311,22 +392,22 @@ final class DearlyFileService {
             insideLeftImagePath: insideLeftPath,
             insideRightImagePath: insideRightPath,
             dateScanned: Date(),
-            isFavorite: manifest.card.isFavorite,
-            sender: manifest.card.sender,
-            occasion: manifest.card.occasion,
+            isFavorite: cardData.isFavorite,
+            sender: cardData.sender,
+            occasion: cardData.occasion,
             dateReceived: cardDate,
-            notes: manifest.card.notes,
-            versionHistory: importedHistory // Set imported history
+            notes: cardData.notes,
+            versionHistory: importedHistory
         )
         
         // Set extended properties
-        card.cardType = manifest.card.type?.rawValue
-        card.aspectRatio = manifest.card.aspectRatio
+        card.cardType = cardData.type?.rawValue
+        card.aspectRatio = cardData.aspectRatio
         card.createdAt = createdAt ?? Date()
         card.updatedAt = updatedAt
         
         // Set AI extraction data if present
-        if let aiData = manifest.card.aiExtractedData {
+        if let aiData = cardData.aiExtractedData {
             card.aiExtractedText = aiData.extractedText
             card.aiDetectedSender = aiData.detectedSender
             card.aiDetectedOccasion = aiData.detectedOccasion
@@ -386,13 +467,25 @@ final class DearlyFileService {
                 return .failure(.unsupportedVersion(manifest.formatVersion))
             }
             
-            // Validate required images exist
-            guard fileManager.fileExists(atPath: tempDir.appendingPathComponent(manifest.images.front).path) else {
-                return .failure(.missingImage(manifest.images.front))
-            }
-            
-            guard fileManager.fileExists(atPath: tempDir.appendingPathComponent(manifest.images.back).path) else {
-                return .failure(.missingImage(manifest.images.back))
+            // Validate based on bundle type
+            if manifest.bundleType == .backup || manifest.cards != nil {
+                // Backup bundle - validate cards array exists
+                guard let cards = manifest.cards, !cards.isEmpty else {
+                    return .failure(.invalidManifest("Backup bundle has no cards"))
+                }
+            } else {
+                // Single card - validate required images exist
+                guard let images = manifest.images else {
+                    return .failure(.invalidManifest("Missing images data"))
+                }
+                
+                guard fileManager.fileExists(atPath: tempDir.appendingPathComponent(images.front).path) else {
+                    return .failure(.missingImage(images.front))
+                }
+                
+                guard fileManager.fileExists(atPath: tempDir.appendingPathComponent(images.back).path) else {
+                    return .failure(.missingImage(images.back))
+                }
             }
             
             return .success(manifest)
@@ -403,34 +496,359 @@ final class DearlyFileService {
         }
     }
     
+    // MARK: - Backup Bundle Export
+    
+    /// Exports multiple cards to a backup .dearly file
+    /// - Parameter cards: The cards to export
+    /// - Returns: URL to the exported .dearly backup file
+    /// - Throws: DearlyFileError if export fails
+    func exportCardsToBackup(_ cards: [Card]) throws -> URL {
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        defer {
+            try? fileManager.removeItem(at: tempDir)
+        }
+        
+        var cardsWithImages: [DearlyCardWithImages] = []
+        let cardsDir = tempDir.appendingPathComponent("cards")
+        try fileManager.createDirectory(at: cardsDir, withIntermediateDirectories: true)
+        
+        for card in cards {
+            let cardFolder = cardsDir.appendingPathComponent(card.id.uuidString)
+            try fileManager.createDirectory(at: cardFolder, withIntermediateDirectories: true)
+            
+            // Front image (required)
+            guard let frontImage = card.frontImage,
+                  let frontData = frontImage.jpegData(compressionQuality: 0.9) else {
+                continue
+            }
+            let frontFilename = "front.jpg"
+            try frontData.write(to: cardFolder.appendingPathComponent(frontFilename))
+            
+            // Back image (required)
+            guard let backImage = card.backImage,
+                  let backData = backImage.jpegData(compressionQuality: 0.9) else {
+                continue
+            }
+            let backFilename = "back.jpg"
+            try backData.write(to: cardFolder.appendingPathComponent(backFilename))
+            
+            // Inside left image (optional)
+            var insideLeftFilename: String? = nil
+            if let insideLeftImage = card.insideLeftImage,
+               let insideLeftData = insideLeftImage.jpegData(compressionQuality: 0.9) {
+                insideLeftFilename = "inside_left.jpg"
+                try insideLeftData.write(to: cardFolder.appendingPathComponent(insideLeftFilename!))
+            }
+            
+            // Inside right image (optional)
+            var insideRightFilename: String? = nil
+            if let insideRightImage = card.insideRightImage,
+               let insideRightData = insideRightImage.jpegData(compressionQuality: 0.9) {
+                insideRightFilename = "inside_right.jpg"
+                try insideRightData.write(to: cardFolder.appendingPathComponent(insideRightFilename!))
+            }
+            
+            let images = DearlyImages(
+                front: "cards/\(card.id.uuidString)/\(frontFilename)",
+                back: "cards/\(card.id.uuidString)/\(backFilename)",
+                insideLeft: insideLeftFilename.map { "cards/\(card.id.uuidString)/\($0)" },
+                insideRight: insideRightFilename.map { "cards/\(card.id.uuidString)/\($0)" }
+            )
+            
+            cardsWithImages.append(DearlyCardWithImages.from(card, images: images))
+        }
+        
+        guard !cardsWithImages.isEmpty else {
+            throw DearlyFileError.exportError("No valid cards to export")
+        }
+        
+        // Create manifest
+        let manifest = DearlyManifest(cards: cardsWithImages)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let manifestData = try encoder.encode(manifest)
+        try manifestData.write(to: tempDir.appendingPathComponent("manifest.json"))
+        
+        // Create ZIP archive
+        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let exportsDir = documentsDir.appendingPathComponent("Exports", isDirectory: true)
+        try fileManager.createDirectory(at: exportsDir, withIntermediateDirectories: true)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
+        let datePart = dateFormatter.string(from: Date())
+        let exportFilename = "dearly_backup_\(datePart).dearly"
+        let exportURL = exportsDir.appendingPathComponent(exportFilename)
+        
+        if fileManager.fileExists(atPath: exportURL.path) {
+            try fileManager.removeItem(at: exportURL)
+        }
+        
+        try createZipArchive(from: tempDir, to: exportURL)
+        
+        print("✅ Exported \(cardsWithImages.count) cards to backup: \(exportURL.path)")
+        return exportURL
+    }
+    
+    // MARK: - Backup Bundle Preview
+    
+    /// Preview structure for backup bundle cards
+    struct BundlePreview {
+        let id: String
+        let sender: String?
+        let occasion: String?
+        let date: String
+        let thumbnailData: Data?
+    }
+    
+    /// Gets a preview of cards in a backup bundle
+    /// - Parameter url: URL to the .dearly backup file
+    /// - Returns: Array of card previews, or nil if not a backup bundle
+    /// - Throws: DearlyFileError if file cannot be read
+    func previewBackupBundle(from url: URL) throws -> [BundlePreview]? {
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        defer {
+            try? fileManager.removeItem(at: tempDir)
+        }
+        
+        try extractZipArchive(from: url, to: tempDir)
+        
+        let manifestURL = tempDir.appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            throw DearlyFileError.missingManifest
+        }
+        
+        let manifestData = try Data(contentsOf: manifestURL)
+        let manifest = try JSONDecoder().decode(DearlyManifest.self, from: manifestData)
+        
+        // Only for backup bundles
+        guard manifest.bundleType == .backup || manifest.cards != nil,
+              let cards = manifest.cards else {
+            return nil
+        }
+        
+        var previews: [BundlePreview] = []
+        
+        for cardData in cards {
+            var thumbnail: Data? = nil
+            
+            // Try to get front image as thumbnail
+            let frontImageURL = tempDir.appendingPathComponent(cardData.images.front)
+            if fileManager.fileExists(atPath: frontImageURL.path) {
+                thumbnail = try? Data(contentsOf: frontImageURL)
+            }
+            
+            previews.append(BundlePreview(
+                id: cardData.id,
+                sender: cardData.sender,
+                occasion: cardData.occasion,
+                date: cardData.date,
+                thumbnailData: thumbnail
+            ))
+        }
+        
+        return previews
+    }
+    
+    // MARK: - Backup Bundle Import
+    
+    /// Imports cards from a backup .dearly file
+    /// - Parameters:
+    ///   - url: URL to the .dearly backup file
+    ///   - modelContext: SwiftData model context for saving cards
+    ///   - generateNewIds: Whether to generate new IDs for cards (default: true)
+    ///   - selectedIds: Set of card IDs to import (nil imports all)
+    /// - Returns: Array of imported Cards
+    /// - Throws: DearlyFileError if import fails
+    func importCardsFromBackup(
+        from url: URL,
+        using modelContext: ModelContext,
+        generateNewIds: Bool = true,
+        selectedIds: Set<String>? = nil
+    ) throws -> [Card] {
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        defer {
+            try? fileManager.removeItem(at: tempDir)
+        }
+        
+        try extractZipArchive(from: url, to: tempDir)
+        
+        let manifestURL = tempDir.appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            throw DearlyFileError.missingManifest
+        }
+        
+        let manifestData = try Data(contentsOf: manifestURL)
+        let manifest = try JSONDecoder().decode(DearlyManifest.self, from: manifestData)
+        
+        if manifest.formatVersion > DearlyFormatVersion {
+            throw DearlyFileError.unsupportedVersion(manifest.formatVersion)
+        }
+        
+        guard manifest.bundleType == .backup || manifest.cards != nil,
+              let cards = manifest.cards else {
+            throw DearlyFileError.invalidManifest("Not a backup bundle")
+        }
+        
+        var importedCards: [Card] = []
+        
+        for cardData in cards {
+            // Skip if not in selected set
+            if let selected = selectedIds, !selected.contains(cardData.id) {
+                continue
+            }
+            
+            let cardId = generateNewIds ? UUID() : (UUID(uuidString: cardData.id) ?? UUID())
+            
+            // Extract and save images
+            let frontURL = tempDir.appendingPathComponent(cardData.images.front)
+            guard fileManager.fileExists(atPath: frontURL.path),
+                  let frontImage = UIImage(contentsOfFile: frontURL.path),
+                  let frontPath = imageStorage.saveImage(frontImage, for: cardId, side: .front) else {
+                continue
+            }
+            
+            let backURL = tempDir.appendingPathComponent(cardData.images.back)
+            guard fileManager.fileExists(atPath: backURL.path),
+                  let backImage = UIImage(contentsOfFile: backURL.path),
+                  let backPath = imageStorage.saveImage(backImage, for: cardId, side: .back) else {
+                continue
+            }
+            
+            var insideLeftPath: String? = nil
+            if let insideLeft = cardData.images.insideLeft {
+                let insideLeftURL = tempDir.appendingPathComponent(insideLeft)
+                if fileManager.fileExists(atPath: insideLeftURL.path),
+                   let insideLeftImage = UIImage(contentsOfFile: insideLeftURL.path) {
+                    insideLeftPath = imageStorage.saveImage(insideLeftImage, for: cardId, side: .insideLeft)
+                }
+            }
+            
+            var insideRightPath: String? = nil
+            if let insideRight = cardData.images.insideRight {
+                let insideRightURL = tempDir.appendingPathComponent(insideRight)
+                if fileManager.fileExists(atPath: insideRightURL.path),
+                   let insideRightImage = UIImage(contentsOfFile: insideRightURL.path) {
+                    insideRightPath = imageStorage.saveImage(insideRightImage, for: cardId, side: .insideRight)
+                }
+            }
+            
+            // Parse dates
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let cardDate = dateFormatter.date(from: cardData.date)
+            
+            let isoFormatter = ISO8601DateFormatter()
+            let createdAt = cardData.createdAt.flatMap { isoFormatter.date(from: $0) }
+            let updatedAt = cardData.updatedAt.flatMap { isoFormatter.date(from: $0) }
+            
+            // Create the new card
+            let card = Card(
+                id: cardId,
+                frontImagePath: frontPath,
+                backImagePath: backPath,
+                insideLeftImagePath: insideLeftPath,
+                insideRightImagePath: insideRightPath,
+                dateScanned: Date(),
+                isFavorite: cardData.isFavorite,
+                sender: cardData.sender,
+                occasion: cardData.occasion,
+                dateReceived: cardDate,
+                notes: cardData.notes
+            )
+            
+            // Set extended properties
+            card.cardType = cardData.type?.rawValue
+            card.aspectRatio = cardData.aspectRatio
+            card.createdAt = createdAt ?? Date()
+            card.updatedAt = updatedAt
+            
+            // Set AI extraction data if present
+            if let aiData = cardData.aiExtractedData {
+                card.aiExtractedText = aiData.extractedText
+                card.aiDetectedSender = aiData.detectedSender
+                card.aiDetectedOccasion = aiData.detectedOccasion
+                card.aiSentiment = aiData.sentiment
+                card.aiMentionedDates = aiData.mentionedDates
+                card.aiKeywords = aiData.keywords
+                card.aiExtractionStatus = aiData.status.rawValue
+                card.aiLastExtractedAt = aiData.lastExtractedAt.flatMap { isoFormatter.date(from: $0) }
+                card.aiProcessingStartedAt = aiData.processingStartedAt.flatMap { isoFormatter.date(from: $0) }
+                
+                if let error = aiData.error {
+                    card.aiErrorType = error.type.rawValue
+                    card.aiErrorMessage = error.message
+                    card.aiErrorRetryable = error.retryable
+                }
+            }
+            
+            modelContext.insert(card)
+            importedCards.append(card)
+        }
+        
+        try modelContext.save()
+        
+        print("✅ Imported \(importedCards.count) cards from backup")
+        return importedCards
+    }
+    
     // MARK: - Private Methods - ZIP Operations
     
     /// Creates a ZIP archive from a directory using native approach
+    /// Recursively includes all files and subdirectories
     private func createZipArchive(from sourceDir: URL, to destinationURL: URL) throws {
-        // Collect all files to include
-        let files = try fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil)
-        
-        // Create ZIP using a simple PKZip-compatible format
         var zipWriter = ZipWriter()
         
-        for fileURL in files {
-            let fileName = fileURL.lastPathComponent
-            let fileData = try Data(contentsOf: fileURL)
-            // Use STORE (no compression) per spec v1.1 recommendation - images are already compressed
-            try zipWriter.addEntry(name: fileName, data: fileData, compressionMethod: .store)
-        }
+        // Recursively collect all files
+        try addFilesToZip(from: sourceDir, baseDir: sourceDir, writer: &zipWriter)
         
         let zipData = try zipWriter.finalize()
         try zipData.write(to: destinationURL)
     }
     
+    /// Recursively adds files from a directory to the ZIP writer
+    private func addFilesToZip(from dir: URL, baseDir: URL, writer: inout ZipWriter) throws {
+        let contents = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])
+        
+        for itemURL in contents {
+            let resourceValues = try itemURL.resourceValues(forKeys: [.isDirectoryKey])
+            let isDirectory = resourceValues.isDirectory ?? false
+            
+            // Calculate relative path from base directory
+            let relativePath = itemURL.path.replacingOccurrences(of: baseDir.path + "/", with: "")
+            
+            if isDirectory {
+                // Recursively process subdirectory
+                try addFilesToZip(from: itemURL, baseDir: baseDir, writer: &writer)
+            } else {
+                // Add file to ZIP
+                let fileData = try Data(contentsOf: itemURL)
+                try writer.addEntry(name: relativePath, data: fileData, compressionMethod: .store)
+            }
+        }
+    }
+    
     /// Extracts a ZIP archive to a directory using native approach
+    /// Creates subdirectories as needed for nested paths
     private func extractZipArchive(from sourceURL: URL, to destinationDir: URL) throws {
         let zipData = try Data(contentsOf: sourceURL)
         
         let zipReader = try ZipReader(data: zipData)
         for entry in zipReader.entries {
             let entryURL = destinationDir.appendingPathComponent(entry.name)
+            
+            // Create parent directories if needed (for nested paths like "cards/uuid/front.jpg")
+            let parentDir = entryURL.deletingLastPathComponent()
+            if !fileManager.fileExists(atPath: parentDir.path) {
+                try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            }
+            
             try entry.data.write(to: entryURL)
         }
     }

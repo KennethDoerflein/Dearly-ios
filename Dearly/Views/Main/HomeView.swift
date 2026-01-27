@@ -22,6 +22,12 @@ struct HomeView: View {
     @State private var importMessage = ""
     @State private var importSucceeded = false
     
+    // Backup restore state
+    @State private var showingRestorePreview = false
+    @State private var restorePreviews: [RestoreCardPreview] = []
+    @State private var restoreFileURL: URL? = nil
+    @State private var isProcessingRestore = false
+    
     // Check if running in DEBUG mode for dev settings visibility
     #if DEBUG
     private let showDevButton = true
@@ -282,6 +288,32 @@ struct HomeView: View {
         } message: {
             Text(importMessage)
         }
+        .sheet(isPresented: $showingRestorePreview) {
+            if isProcessingRestore {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text("Restoring cards...")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                RestorePreviewView(
+                    previews: restorePreviews,
+                    onRestore: { selectedIds in
+                        restoreCards(selectedIds: selectedIds)
+                    },
+                    onCancel: {
+                        showingRestorePreview = false
+                        if let url = restoreFileURL {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        restoreFileURL = nil
+                        restorePreviews = []
+                    }
+                )
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dearlyFileOpened)) { notification in
             handleDearlyFileImport(notification: notification)
         }
@@ -304,26 +336,90 @@ struct HomeView: View {
         do {
             // Copy file to temp directory to ensure we have access
             let tempURL = try copyToTempDirectory(url: url)
-            defer {
+            
+            // Use unified import that auto-detects type
+            let result = try DearlyFileService.shared.detectAndImport(from: tempURL, using: modelContext)
+            
+            switch result {
+            case .singleCard(let card):
+                // Single card was imported directly - cleanup temp file
                 try? FileManager.default.removeItem(at: tempURL)
+                
+                importMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
+                importSucceeded = true
+                showingImportAlert = true
+                viewModel.loadCards()
+                
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                
+            case .backupBundle(let previews):
+                // Backup bundle - show preview for selection
+                restoreFileURL = tempURL
+                restorePreviews = previews.map { preview in
+                    RestoreCardPreview(
+                        id: preview.id,
+                        sender: preview.sender,
+                        occasion: preview.occasion,
+                        date: preview.date,
+                        thumbnail: preview.thumbnailData.flatMap { UIImage(data: $0) }
+                    )
+                }
+                showingRestorePreview = true
             }
-            
-            let card = try DearlyFileService.shared.importCard(from: tempURL, using: modelContext)
-            importMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
-            importSucceeded = true
-            
-            // Haptic feedback
-            let impact = UIImpactFeedbackGenerator(style: .medium)
-            impact.impactOccurred()
         } catch let error as DearlyFileError {
             importMessage = error.localizedDescription
             importSucceeded = false
+            showingImportAlert = true
         } catch {
             importMessage = "Could not access the selected file: \(error.localizedDescription)"
             importSucceeded = false
+            showingImportAlert = true
         }
+    }
+    
+    private func restoreCards(selectedIds: Set<String>) {
+        guard let fileURL = restoreFileURL else { return }
         
-        showingImportAlert = true
+        isProcessingRestore = true
+        
+        Task {
+            do {
+                let cards = try DearlyFileService.shared.importCardsFromBackup(
+                    from: fileURL,
+                    using: modelContext,
+                    selectedIds: selectedIds
+                )
+                
+                await MainActor.run {
+                    isProcessingRestore = false
+                    showingRestorePreview = false
+                    restorePreviews = []
+                    
+                    importMessage = "Successfully restored \(cards.count) card(s)"
+                    importSucceeded = true
+                    showingImportAlert = true
+                    
+                    viewModel.loadCards()
+                    
+                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                    impact.impactOccurred()
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessingRestore = false
+                    showingRestorePreview = false
+                    
+                    importMessage = "Failed to restore: \(error.localizedDescription)"
+                    importSucceeded = false
+                    showingImportAlert = true
+                }
+            }
+            
+            // Cleanup temp file
+            try? FileManager.default.removeItem(at: fileURL)
+            restoreFileURL = nil
+        }
     }
     
     /// Copies a file to a temporary directory to ensure access

@@ -36,6 +36,9 @@ enum DearlyFileError: LocalizedError {
     /// Generic file operation error
     case fileOperationError(String)
     
+    /// Tried to import a backup bundle as a single card
+    case backupBundleDetected
+    
     var errorDescription: String? {
         switch self {
         case .invalidZip:
@@ -56,6 +59,8 @@ enum DearlyFileError: LocalizedError {
             return "Failed to export card: \(detail)"
         case .fileOperationError(let detail):
             return "File operation failed: \(detail)"
+        case .backupBundleDetected:
+            return "This is a backup archive. Use 'Restore from Backup' instead."
         }
     }
     
@@ -79,6 +84,8 @@ enum DearlyFileError: LocalizedError {
             return "Try exporting the card again. If the problem persists, restart the app."
         case .fileOperationError:
             return "Try the operation again. If the problem persists, restart the app."
+        case .backupBundleDetected:
+            return "This file contains multiple cards. Go to Settings > Restore from Backup to import it."
         }
     }
 }

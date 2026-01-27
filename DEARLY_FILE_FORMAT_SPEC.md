@@ -1,25 +1,28 @@
-# Dearly File Format Specification v1.2
+# Dearly File Format Specification v1.3
 
-> A portable interchange format for greeting card data with bundled images and version history.
+> A portable interchange format for greeting card data with bundled images, version history, and multi-card backup support.
 
 ---
 
 ## Overview
 
-The `.dearly` file format is a ZIP-based container that bundles a greeting card's metadata with its associated images into a single, shareable file. This enables users to export cards from the Dearly app and import them elsewhere—or share cards between users. Version 1.2 adds optional version history support.
+The `.dearly` file format is a ZIP-based container that bundles greeting card metadata with associated images into a single, shareable file. It supports two modes:
+
+1. **Single Card** - For sharing individual cards between users
+2. **Backup Bundle** - For backing up/restoring multiple cards at once
 
 | Property        | Value                              |
 | --------------- | ---------------------------------- |
 | **Extension**   | `.dearly`                          |
 | **MIME Type**   | `application/zip`                  |
-| **Version**     | `1.2`                              |
+| **Version**     | `1.3`                              |
 | **Compression** | STORE or DEFLATE (see [Compression](#compression)) |
 
 ---
 
 ## File Structure
 
-A `.dearly` file is a standard ZIP archive with the following structure:
+### Single Card Export
 
 ```
 card_export.dearly (ZIP archive)
@@ -30,9 +33,25 @@ card_export.dearly (ZIP archive)
 ├── inside_right.jpg    ← Optional: Inside right image (folded cards only)
 └── versions/           ← Optional: Historical images (if exporting with history)
     ├── v1/
-    │   └── front.jpg   ← Previous front image from version 1
+    │   └── front.jpg
     └── v2/
-        └── back.jpg    ← Previous back image from version 2
+        └── back.jpg
+```
+
+### Backup Bundle (Multi-Card)
+
+```
+dearly_backup.dearly (ZIP archive)
+├── manifest.json       ← Required: Format metadata with cards array
+└── cards/              ← Required: Folder containing all card images
+    ├── {card-id-1}/
+    │   ├── front.jpg
+    │   ├── back.jpg
+    │   ├── inside_left.jpg  (optional)
+    │   └── inside_right.jpg (optional)
+    └── {card-id-2}/
+        ├── front.jpg
+        └── back.jpg
 ```
 
 ### Image Files
@@ -53,27 +72,47 @@ card_export.dearly (ZIP archive)
 
 ## Manifest Schema
 
-The `manifest.json` file contains all metadata for the file format and the card itself.
+The `manifest.json` file contains all metadata for the file format and the card(s).
 
-### Top-Level Structure
+### Top-Level Structure (Single Card)
 
 ```json
 {
   "formatVersion": 2,
+  "bundleType": "single",
   "exportedAt": "2026-01-14T07:30:00.000Z",
   "card": { ... },
   "images": { ... },
-  "versionHistory": [ ... ]  // Optional
+  "versionHistory": [ ... ]
+}
+```
+
+### Top-Level Structure (Backup Bundle)
+
+```json
+{
+  "formatVersion": 3,
+  "bundleType": "backup",
+  "exportedAt": "2026-01-14T07:30:00.000Z",
+  "cards": [
+    { "id": "...", "images": { "front": "cards/abc123/front.jpg", ... }, ... },
+    { "id": "...", "images": { "front": "cards/def456/front.jpg", ... }, ... }
+  ]
 }
 ```
 
 | Field           | Type     | Required | Description                                      |
 | --------------- | -------- | -------- | ------------------------------------------------ |
-| `formatVersion` | `number` | ✅       | Format version number (`2` for version history)  |
+| `formatVersion` | `number` | ✅       | Format version (`2` for single, `3` for bundle)  |
+| `bundleType`    | `string` | ❌       | `"single"` or `"backup"` (default: single)       |
 | `exportedAt`    | `string` | ✅       | ISO 8601 timestamp of when the file was created  |
-| `card`          | `object` | ✅       | Card metadata (see [Card Object](#card-object))  |
-| `images`        | `object` | ✅       | Image filename mapping (see [Images Object](#images-object)) |
-| `versionHistory`| `array`  | ❌       | Edit history (see [Version History](#version-history)) |
+| `card`          | `object` | ⚠️       | Card metadata (single card mode only)            |
+| `images`        | `object` | ⚠️       | Image filename mapping (single card mode only)   |
+| `cards`         | `array`  | ⚠️       | Array of cards with embedded images (bundle only)|
+| `versionHistory`| `array`  | ❌       | Edit history (single card mode only)             |
+
+> [!IMPORTANT]
+> Single card mode uses `card` + `images` fields. Backup bundle mode uses `cards` array.
 
 ---
 
@@ -337,6 +376,13 @@ Optional array of version snapshots capturing edit history. Only included when e
 ---
 
 ## Changelog
+
+### Version 1.3
+- Added `bundleType` field: `"single"` or `"backup"`
+- Added `cards` array for multi-card backup bundles
+- Backup bundles use `cards/` folder structure with card IDs as subfolders
+- Format version `3` indicates backup bundle mode
+- Single card exports remain backward compatible with v1.2
 
 ### Version 1.2
 - Added optional `versionHistory` array for edit history
