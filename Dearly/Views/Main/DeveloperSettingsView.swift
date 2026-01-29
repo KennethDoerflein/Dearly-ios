@@ -146,7 +146,7 @@ struct DeveloperSettingsView: View {
     
     private func testPaywall() {
         // Register a test placement to trigger a paywall
-        Superwall.shared.register(placement: "test_paywall") {
+        Superwall.shared.register(placement: "onboarding_complete") {
             print("✅ Feature unlocked! User has access.")
         }
     }
