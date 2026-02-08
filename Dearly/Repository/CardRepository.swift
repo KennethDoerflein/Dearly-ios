@@ -10,14 +10,12 @@ import SwiftData
 import UIKit
 
 /// Repository for managing Card persistence with SwiftData
-/// Handles coordination between SwiftData and ImageStorageService
+/// Images are now stored directly in SwiftData and sync via CloudKit
 final class CardRepository {
     private let modelContext: ModelContext
-    private let imageStorage: ImageStorageService
     
-    init(modelContext: ModelContext, imageStorage: ImageStorageService = .shared) {
+    init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        self.imageStorage = imageStorage
     }
     
     // MARK: - CRUD Operations
@@ -29,7 +27,9 @@ final class CardRepository {
         )
         
         do {
-            return try modelContext.fetch(descriptor)
+            let cards = try modelContext.fetch(descriptor)
+            print("📦 CardRepository.fetchAllCards: Found \(cards.count) cards in SwiftData")
+            return cards
         } catch {
             print("❌ Failed to fetch cards: \(error.localizedDescription)")
             return []
@@ -38,8 +38,10 @@ final class CardRepository {
     
     /// Adds a new card to the database
     func addCard(_ card: Card) {
+        print("📦 CardRepository.addCard: Inserting card \(card.id)")
         modelContext.insert(card)
         save()
+        print("📦 CardRepository.addCard: Card saved successfully")
     }
     
     /// Updates an existing card (SwiftData tracks changes automatically)
@@ -47,12 +49,8 @@ final class CardRepository {
         save()
     }
     
-    /// Deletes a card and its associated images
+    /// Deletes a card (images are stored in SwiftData, so they're deleted automatically)
     func deleteCard(_ card: Card) {
-        // Delete images from file system first
-        imageStorage.deleteImages(for: card.id)
-        
-        // Delete from database
         modelContext.delete(card)
         save()
     }
@@ -61,37 +59,19 @@ final class CardRepository {
     func save() {
         do {
             try modelContext.save()
+            print("💾 CardRepository.save: Context saved successfully")
         } catch {
             print("❌ Failed to save context: \(error.localizedDescription)")
         }
     }
     
-    // MARK: - Image Operations
-    
-    /// Saves images for a card and returns the file paths
-    func saveImages(
-        frontImage: UIImage?,
-        backImage: UIImage?,
-        insideLeftImage: UIImage?,
-        insideRightImage: UIImage?,
-        for cardId: UUID
-    ) -> (front: String?, back: String?, insideLeft: String?, insideRight: String?) {
-        let frontPath = frontImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.front) }
-        let backPath = backImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.back) }
-        let insideLeftPath = insideLeftImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.insideLeft) }
-        let insideRightPath = insideRightImage.flatMap { imageStorage.saveImage($0, for: cardId, side: ImageSide.insideRight) }
-        
-        return (frontPath, backPath, insideLeftPath, insideRightPath)
-    }
-    
     // MARK: - Utility
     
-    /// Clears all cards and their images (for testing/reset)
+    /// Clears all cards (for testing/reset)
     func clearAllData() {
         let cards = fetchAllCards()
         for card in cards {
             deleteCard(card)
         }
-        imageStorage.clearAllImages()
     }
 }

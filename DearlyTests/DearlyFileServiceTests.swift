@@ -20,7 +20,7 @@ struct DearlyFileServiceTests {
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let mainContext = ModelContext(try ModelContainer(for: schema, configurations: [modelConfiguration]))
         
-        // create a dummy image
+        // Create a dummy image
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
         let img = renderer.image { ctx in
             UIColor.red.setFill()
@@ -28,19 +28,14 @@ struct DearlyFileServiceTests {
         }
         let imgData = img.jpegData(compressionQuality: 0.9)!
         
-        // Create dummy card
+        // Create dummy card with image data stored directly
         let cardId = UUID()
-        // Save images manually to storage
-        let storage = ImageStorageService.shared
-        let frontPath = storage.saveImage(img, for: cardId, side: .front)
-        let backPath = storage.saveImage(img, for: cardId, side: .back)
-        
         let card = Card(
             id: cardId,
-            frontImagePath: frontPath,
-            backImagePath: backPath,
-            insideLeftImagePath: nil,
-            insideRightImagePath: nil,
+            frontImageData: imgData,
+            backImageData: imgData,
+            insideLeftImageData: nil,
+            insideRightImageData: nil,
             dateScanned: Date(),
             isFavorite: true,
             sender: "Test Sender",
@@ -77,9 +72,9 @@ struct DearlyFileServiceTests {
         #expect(importedCard.isFavorite == true)
         #expect(importedCard.id != card.id) // Should be a new ID
         
-        // Verify images were saved
-        #expect(importedCard.frontImagePath != nil)
-        #expect(importedCard.backImagePath != nil)
+        // Verify images were saved (as Data)
+        #expect(importedCard.frontImageData != nil)
+        #expect(importedCard.backImageData != nil)
         
         // Cleanup
         try? FileManager.default.removeItem(at: exportURL)
@@ -98,19 +93,16 @@ struct DearlyFileServiceTests {
             UIColor.blue.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
         }
+        let imgData = img.jpegData(compressionQuality: 0.9)!
         
-        // Create dummy card with AI data
+        // Create dummy card with AI data and image data stored directly
         let cardId = UUID()
-        let storage = ImageStorageService.shared
-        let frontPath = storage.saveImage(img, for: cardId, side: .front)
-        let backPath = storage.saveImage(img, for: cardId, side: .back)
-        
         let card = Card(
             id: cardId,
-            frontImagePath: frontPath,
-            backImagePath: backPath,
-            insideLeftImagePath: nil,
-            insideRightImagePath: nil,
+            frontImageData: imgData,
+            backImageData: imgData,
+            insideLeftImageData: nil,
+            insideRightImageData: nil,
             dateScanned: Date(),
             isFavorite: true,
             sender: "AI Test Sender",
