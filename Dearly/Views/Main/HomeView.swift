@@ -14,6 +14,7 @@ struct HomeView: View {
     @StateObject private var viewModel = CardsViewModel()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @State private var showingDevSettings = false
+    @State private var showingSettings = false
     @State private var showBulkDeleteConfirmation = false
     @FocusState private var isSearchFocused: Bool
     
@@ -249,25 +250,35 @@ struct HomeView: View {
                                         .foregroundColor(.black)
                                 }
                             }
+                            
+                            // Settings button
+                            Button(action: {
+                                showingSettings = true
+                            }) {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.black)
+                            }
                         }
                     }
                 }
             }
             .onAppear {
+                print("🏠 HomeView.onAppear called")
                 viewModel.configure(with: modelContext)
             }
         }
         .sheet(isPresented: $viewModel.isShowingScanner) {
             ScanCardFlowView(viewModel: viewModel)
         }
-        .sheet(isPresented: $showingDevSettings, onDismiss: {
-            // Reload cards when developer settings is dismissed
-            viewModel.configure(with: modelContext)
-        }) {
+        .sheet(isPresented: $showingDevSettings) {
             DeveloperSettingsView(
                 viewModel: viewModel,
                 hasCompletedOnboarding: $hasCompletedOnboarding
             )
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(viewModel: viewModel)
         }
         .alert("Delete \(viewModel.selectedCardsCount) Cards?", isPresented: $showBulkDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }

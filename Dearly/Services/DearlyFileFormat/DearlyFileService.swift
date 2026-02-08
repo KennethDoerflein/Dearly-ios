@@ -1,4 +1,4 @@
-//
+﻿//
 //  DearlyFileService.swift
 //  Dearly
 //
@@ -17,9 +17,6 @@ final class DearlyFileService {
     
     /// File manager instance
     private let fileManager = FileManager.default
-    
-    /// Image storage service
-    private let imageStorage = ImageStorageService.shared
     
     /// Supported image extensions
     private let supportedImageExtensions = ["jpg", "jpeg", "png", "webp", "heic"]
@@ -160,7 +157,7 @@ final class DearlyFileService {
         // Create the ZIP archive using native approach
         try createZipArchive(from: tempDir, to: exportURL)
         
-        print("✅ Exported card to: \(exportURL.path)")
+        print("âœ… Exported card to: \(exportURL.path)")
         return exportURL
     }
     
@@ -289,39 +286,18 @@ final class DearlyFileService {
         // Generate new UUID per spec requirement
         let newCardId = UUID()
         
-        // Extract and save images
-        let frontPath = try saveImportedImage(
-            filename: images.front,
-            from: tempDir,
-            cardId: newCardId,
-            side: .front
-        )
+        // Load images as Data (stored directly in SwiftData)
+        let frontData = try loadImportedImageData(filename: manifest.images.front, from: tempDir)
+        let backData = try loadImportedImageData(filename: manifest.images.back, from: tempDir)
         
-        let backPath = try saveImportedImage(
-            filename: images.back,
-            from: tempDir,
-            cardId: newCardId,
-            side: .back
-        )
-        
-        var insideLeftPath: String? = nil
-        if let insideLeftFilename = images.insideLeft {
-            insideLeftPath = try saveImportedImage(
-                filename: insideLeftFilename,
-                from: tempDir,
-                cardId: newCardId,
-                side: .insideLeft
-            )
+        var insideLeftData: Data? = nil
+        if let insideLeftFilename = manifest.images.insideLeft {
+            insideLeftData = try loadImportedImageData(filename: insideLeftFilename, from: tempDir)
         }
         
-        var insideRightPath: String? = nil
-        if let insideRightFilename = images.insideRight {
-            insideRightPath = try saveImportedImage(
-                filename: insideRightFilename,
-                from: tempDir,
-                cardId: newCardId,
-                side: .insideRight
-            )
+        var insideRightData: Data? = nil
+        if let insideRightFilename = manifest.images.insideRight {
+            insideRightData = try loadImportedImageData(filename: insideRightFilename, from: tempDir)
         }
         
         // Processing Version History Import (from top-level per spec)
@@ -357,7 +333,7 @@ final class DearlyFileService {
                             let slotEnum = ImageSlot(rawValue: dearlyChange.slot) ?? .front
                             updatedImageChanges.append(ImageChange(slot: slotEnum, previousUri: newPath))
                         } catch {
-                            print("⚠️ Failed to import version image: \(error)")
+                            print("âš ï¸ Failed to import version image: \(error)")
                         }
                     }
                 }
@@ -384,13 +360,13 @@ final class DearlyFileService {
         let createdAt = cardData.createdAt.flatMap { isoFormatter.date(from: $0) }
         let updatedAt = cardData.updatedAt.flatMap { isoFormatter.date(from: $0) }
         
-        // Create the new card
+        // Create the new card with image data stored directly
         let card = Card(
             id: newCardId,
-            frontImagePath: frontPath,
-            backImagePath: backPath,
-            insideLeftImagePath: insideLeftPath,
-            insideRightImagePath: insideRightPath,
+            frontImageData: frontData,
+            backImageData: backData,
+            insideLeftImageData: insideLeftData,
+            insideRightImageData: insideRightData,
             dateScanned: Date(),
             isFavorite: cardData.isFavorite,
             sender: cardData.sender,
@@ -430,7 +406,7 @@ final class DearlyFileService {
         modelContext.insert(card)
         try modelContext.save()
         
-        print("✅ Imported card: \(newCardId)")
+        print("âœ… Imported card: \(newCardId)")
         return card
     }
     
@@ -588,7 +564,7 @@ final class DearlyFileService {
         
         try createZipArchive(from: tempDir, to: exportURL)
         
-        print("✅ Exported \(cardsWithImages.count) cards to backup: \(exportURL.path)")
+        print("âœ… Exported \(cardsWithImages.count) cards to backup: \(exportURL.path)")
         return exportURL
     }
     
@@ -794,7 +770,7 @@ final class DearlyFileService {
         
         try modelContext.save()
         
-        print("✅ Imported \(importedCards.count) cards from backup")
+        print("âœ… Imported \(importedCards.count) cards from backup")
         return importedCards
     }
     
@@ -853,13 +829,8 @@ final class DearlyFileService {
         }
     }
     
-    /// Saves an imported image to the image storage
-    private func saveImportedImage(
-        filename: String,
-        from tempDir: URL,
-        cardId: UUID,
-        side: ImageSide
-    ) throws -> String {
+    /// Loads an imported image as Data (stored directly in SwiftData)
+    private func loadImportedImageData(filename: String, from tempDir: URL) throws -> Data {
         let sourceURL = tempDir.appendingPathComponent(filename)
         
         guard fileManager.fileExists(atPath: sourceURL.path) else {
@@ -870,11 +841,12 @@ final class DearlyFileService {
             throw DearlyFileError.invalidCardData("Could not load image: \(filename)")
         }
         
-        guard let path = imageStorage.saveImage(image, for: cardId, side: side) else {
-            throw DearlyFileError.writeError("Failed to save image: \(filename)")
+        // Convert to JPEG data for storage
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            throw DearlyFileError.invalidCardData("Could not convert image to data: \(filename)")
         }
         
-        return path
+        return imageData
     }
 }
 
@@ -1160,7 +1132,7 @@ private struct ZipReader {
                     uncompressedData = Data(bytes: destinationBuffer, count: decodedSize)
                 } else {
                     // Fallback: try decompressing without prepended header
-                    print("⚠️ Failed to decompress \(name) with header. Retrying raw...")
+                    print("âš ï¸ Failed to decompress \(name) with header. Retrying raw...")
                     
                     let rawSource = compressedData as NSData
                      let decodedSize2 = compression_decode_buffer(

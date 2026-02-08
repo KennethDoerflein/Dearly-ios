@@ -11,13 +11,16 @@ import SwiftData
 
 @Model
 final class Card {
-    var id: UUID
-    var frontImagePath: String?
-    var backImagePath: String?
-    var insideLeftImagePath: String?
-    var insideRightImagePath: String?
-    var dateScanned: Date
-    var isFavorite: Bool
+    var id: UUID = UUID()
+    
+    // Image data stored directly in SwiftData (syncs via CloudKit)
+    @Attribute(.externalStorage) var frontImageData: Data?
+    @Attribute(.externalStorage) var backImageData: Data?
+    @Attribute(.externalStorage) var insideLeftImageData: Data?
+    @Attribute(.externalStorage) var insideRightImageData: Data?
+    
+    var dateScanned: Date = Date()
+    var isFavorite: Bool = false
     
     // Metadata
     var sender: String?
@@ -50,10 +53,10 @@ final class Card {
     
     init(
         id: UUID = UUID(),
-        frontImagePath: String? = nil,
-        backImagePath: String? = nil,
-        insideLeftImagePath: String? = nil,
-        insideRightImagePath: String? = nil,
+        frontImageData: Data? = nil,
+        backImageData: Data? = nil,
+        insideLeftImageData: Data? = nil,
+        insideRightImageData: Data? = nil,
         dateScanned: Date = Date(),
         isFavorite: Bool = false,
         sender: String? = nil,
@@ -63,10 +66,10 @@ final class Card {
         versionHistory: [CardVersionSnapshot]? = nil
     ) {
         self.id = id
-        self.frontImagePath = frontImagePath
-        self.backImagePath = backImagePath
-        self.insideLeftImagePath = insideLeftImagePath
-        self.insideRightImagePath = insideRightImagePath
+        self.frontImageData = frontImageData
+        self.backImageData = backImageData
+        self.insideLeftImageData = insideLeftImageData
+        self.insideRightImageData = insideRightImageData
         self.dateScanned = dateScanned
         self.isFavorite = isFavorite
         self.sender = sender
@@ -79,18 +82,44 @@ final class Card {
     // MARK: - Computed Properties for Image Loading
     
     var frontImage: UIImage? {
-        ImageStorageService.shared.loadImage(from: frontImagePath)
+        guard let data = frontImageData else { return nil }
+        return UIImage(data: data)
     }
     
     var backImage: UIImage? {
-        ImageStorageService.shared.loadImage(from: backImagePath)
+        guard let data = backImageData else { return nil }
+        return UIImage(data: data)
     }
     
     var insideLeftImage: UIImage? {
-        ImageStorageService.shared.loadImage(from: insideLeftImagePath)
+        guard let data = insideLeftImageData else { return nil }
+        return UIImage(data: data)
     }
     
     var insideRightImage: UIImage? {
-        ImageStorageService.shared.loadImage(from: insideRightImagePath)
+        guard let data = insideRightImageData else { return nil }
+        return UIImage(data: data)
+    }
+    
+    // MARK: - Helper Methods for Setting Images
+    
+    /// Sets the front image from a UIImage
+    func setFrontImage(_ image: UIImage?, compressionQuality: CGFloat = 0.8) {
+        frontImageData = image?.jpegData(compressionQuality: compressionQuality)
+    }
+    
+    /// Sets the back image from a UIImage
+    func setBackImage(_ image: UIImage?, compressionQuality: CGFloat = 0.8) {
+        backImageData = image?.jpegData(compressionQuality: compressionQuality)
+    }
+    
+    /// Sets the inside left image from a UIImage
+    func setInsideLeftImage(_ image: UIImage?, compressionQuality: CGFloat = 0.8) {
+        insideLeftImageData = image?.jpegData(compressionQuality: compressionQuality)
+    }
+    
+    /// Sets the inside right image from a UIImage
+    func setInsideRightImage(_ image: UIImage?, compressionQuality: CGFloat = 0.8) {
+        insideRightImageData = image?.jpegData(compressionQuality: compressionQuality)
     }
 }
