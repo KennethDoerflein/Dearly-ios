@@ -30,16 +30,24 @@ class CardsViewModel: ObservableObject {
     @Published var selectedCardIds: Set<UUID> = []
     
     private var repository: CardRepository?
-    private let imageStorage = ImageStorageService.shared
+    
+    /// JPEG compression quality for card images
+    private let imageCompressionQuality: CGFloat = 0.8
     
     init() {
         // Repository will be set when modelContext is available
     }
     
     /// Configure the view model with a model context
+    /// Always updates the repository with the current modelContext to ensure consistency
     func configure(with modelContext: ModelContext) {
+        print("🔧 CardsViewModel.configure called, repository is \(repository == nil ? "nil" : "not nil")")
+        // Always create/update the repository with the current modelContext
+        // The modelContext from @Environment can change, so we need to stay in sync
         self.repository = CardRepository(modelContext: modelContext)
+        print("🔧 Created/updated CardRepository with current modelContext")
         loadCards()
+        print("🔧 After loadCards: \(cards.count) cards loaded")
     }
     
     // MARK: - Public Methods
@@ -192,30 +200,19 @@ class CardsViewModel: ObservableObject {
         dateReceived: Date? = nil,
         notes: String? = nil
     ) -> Card {
-        let cardId = UUID()
+        // Convert images to Data (stored directly in SwiftData, syncs via CloudKit)
+        let frontData = frontImage?.jpegData(compressionQuality: imageCompressionQuality)
+        let backData = backImage?.jpegData(compressionQuality: imageCompressionQuality)
+        let insideLeftData = insideLeftImage?.jpegData(compressionQuality: imageCompressionQuality)
+        let insideRightData = insideRightImage?.jpegData(compressionQuality: imageCompressionQuality)
         
-        // Save images to file system
-        let paths: (front: String?, back: String?, insideLeft: String?, insideRight: String?)
-        if let repo = repository {
-            paths = repo.saveImages(
-                frontImage: frontImage,
-                backImage: backImage,
-                insideLeftImage: insideLeftImage,
-                insideRightImage: insideRightImage,
-                for: cardId
-            )
-        } else {
-            let nilPath: String? = nil
-            paths = (front: nilPath, back: nilPath, insideLeft: nilPath, insideRight: nilPath)
-        }
-        
-        // Create card with file paths
+        // Create card with image data
         let card = Card(
-            id: cardId,
-            frontImagePath: paths.front,
-            backImagePath: paths.back,
-            insideLeftImagePath: paths.insideLeft,
-            insideRightImagePath: paths.insideRight,
+            id: UUID(),
+            frontImageData: frontData,
+            backImageData: backData,
+            insideLeftImageData: insideLeftData,
+            insideRightImageData: insideRightData,
             dateScanned: Date(),
             isFavorite: false,
             sender: sender,

@@ -18,9 +18,6 @@ final class DearlyFileService {
     /// File manager instance
     private let fileManager = FileManager.default
     
-    /// Image storage service
-    private let imageStorage = ImageStorageService.shared
-    
     /// Supported image extensions
     private let supportedImageExtensions = ["jpg", "jpeg", "png", "webp", "heic"]
     
@@ -163,39 +160,18 @@ final class DearlyFileService {
         // Generate new UUID per spec requirement
         let newCardId = UUID()
         
-        // Extract and save images
-        let frontPath = try saveImportedImage(
-            filename: manifest.images.front,
-            from: tempDir,
-            cardId: newCardId,
-            side: .front
-        )
+        // Load images as Data (stored directly in SwiftData)
+        let frontData = try loadImportedImageData(filename: manifest.images.front, from: tempDir)
+        let backData = try loadImportedImageData(filename: manifest.images.back, from: tempDir)
         
-        let backPath = try saveImportedImage(
-            filename: manifest.images.back,
-            from: tempDir,
-            cardId: newCardId,
-            side: .back
-        )
-        
-        var insideLeftPath: String? = nil
+        var insideLeftData: Data? = nil
         if let insideLeftFilename = manifest.images.insideLeft {
-            insideLeftPath = try saveImportedImage(
-                filename: insideLeftFilename,
-                from: tempDir,
-                cardId: newCardId,
-                side: .insideLeft
-            )
+            insideLeftData = try loadImportedImageData(filename: insideLeftFilename, from: tempDir)
         }
         
-        var insideRightPath: String? = nil
+        var insideRightData: Data? = nil
         if let insideRightFilename = manifest.images.insideRight {
-            insideRightPath = try saveImportedImage(
-                filename: insideRightFilename,
-                from: tempDir,
-                cardId: newCardId,
-                side: .insideRight
-            )
+            insideRightData = try loadImportedImageData(filename: insideRightFilename, from: tempDir)
         }
         
         // Parse dates
@@ -207,13 +183,13 @@ final class DearlyFileService {
         let createdAt = manifest.card.createdAt.flatMap { isoFormatter.date(from: $0) }
         let updatedAt = manifest.card.updatedAt.flatMap { isoFormatter.date(from: $0) }
         
-        // Create the new card
+        // Create the new card with image data stored directly
         let card = Card(
             id: newCardId,
-            frontImagePath: frontPath,
-            backImagePath: backPath,
-            insideLeftImagePath: insideLeftPath,
-            insideRightImagePath: insideRightPath,
+            frontImageData: frontData,
+            backImageData: backData,
+            insideLeftImageData: insideLeftData,
+            insideRightImageData: insideRightData,
             dateScanned: Date(),
             isFavorite: manifest.card.isFavorite,
             sender: manifest.card.sender,
@@ -338,13 +314,8 @@ final class DearlyFileService {
         }
     }
     
-    /// Saves an imported image to the image storage
-    private func saveImportedImage(
-        filename: String,
-        from tempDir: URL,
-        cardId: UUID,
-        side: ImageSide
-    ) throws -> String {
+    /// Loads an imported image as Data (stored directly in SwiftData)
+    private func loadImportedImageData(filename: String, from tempDir: URL) throws -> Data {
         let sourceURL = tempDir.appendingPathComponent(filename)
         
         guard fileManager.fileExists(atPath: sourceURL.path) else {
@@ -355,11 +326,12 @@ final class DearlyFileService {
             throw DearlyFileError.invalidCardData("Could not load image: \(filename)")
         }
         
-        guard let path = imageStorage.saveImage(image, for: cardId, side: side) else {
-            throw DearlyFileError.writeError("Failed to save image: \(filename)")
+        // Convert to JPEG data for storage
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+            throw DearlyFileError.invalidCardData("Could not convert image to data: \(filename)")
         }
         
-        return path
+        return imageData
     }
 }
 
