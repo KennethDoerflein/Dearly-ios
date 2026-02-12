@@ -16,6 +16,9 @@ struct VersionHistoryView: View {
         (card.versionHistory ?? []).sorted { $0.versionNumber > $1.versionNumber }
     }
     
+    @State private var versionToRestore: CardVersionSnapshot?
+    @State private var showingRestoreConfirmation = false
+    
     var body: some View {
         NavigationStack {
             List {
@@ -36,7 +39,8 @@ struct VersionHistoryView: View {
                                 }
                                 
                                 Button {
-                                    restoreVersion(snapshot)
+                                    versionToRestore = snapshot
+                                    showingRestoreConfirmation = true
                                 } label: {
                                     Label("Restore", systemImage: "arrow.counterclockwise")
                                 }
@@ -53,6 +57,21 @@ struct VersionHistoryView: View {
                         dismiss()
                     }
                 }
+            }
+            .confirmationDialog(
+                "Restore Version?",
+                isPresented: $showingRestoreConfirmation,
+                titleVisibility: .visible,
+                presenting: versionToRestore
+            ) { snapshot in
+                Button("Restore Version \(snapshot.versionNumber)") {
+                    restoreVersion(snapshot)
+                }
+                Button("Cancel", role: .cancel) {
+                    versionToRestore = nil
+                }
+            } message: { snapshot in
+                Text("Current changes will be saved as a new version before restoring. Are you sure you want to restore Version \(snapshot.versionNumber)?")
             }
         }
     }

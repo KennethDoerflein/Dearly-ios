@@ -135,49 +135,70 @@ extension Card {
                 continue
             }
             
-            let currentPath: String?
-            switch change.slot {
-            case .front: currentPath = self.frontImagePath
-            case .back: currentPath = self.backImagePath
-            case .insideLeft: currentPath = self.insideLeftImagePath
-            case .insideRight: currentPath = self.insideRightImagePath
+            guard let restoredImageData = try? Data(contentsOf: versionUrl) else {
+                 logger.error("Failed to load image data from version file: \(versionUrl)")
+                 continue
             }
             
-            // Backup current image before overwriting
-            if let currentPath = currentPath {
+            let currentData: Data?
+            switch change.slot {
+            case .front: currentData = self.frontImageData
+            case .back: currentData = self.backImageData
+            case .insideLeft: currentData = self.insideLeftImageData
+            case .insideRight: currentData = self.insideRightImageData
+            }
+            
+            if let currentData = currentData, let currentImage = UIImage(data: currentData) {
                 let nextVersion = (self.versionHistory?.count ?? 0) + 1
-                if let backupPath = imageStorage.saveVersionImage(from: currentPath, for: self.id, versionNumber: nextVersion) {
+                
+                if let backupPath = saveImageToVersionHistory(image: currentImage, cardId: self.id, versionNumber: nextVersion, originalFileName: "\(change.slot.rawValue).jpg") {
                     newImageChanges.append(ImageChange(slot: change.slot, previousUri: backupPath))
                 }
             }
             
-            // Restore the old image
-            let targetPath = "CardImages/\(self.id.uuidString)/\(change.slot.rawValue).jpg"
-            if let targetUrl = imageStorage.getImageURL(for: targetPath) {
-                do {
-                    if FileManager.default.fileExists(atPath: targetUrl.path) {
-                        try FileManager.default.removeItem(at: targetUrl)
-                    }
-                    try FileManager.default.copyItem(at: versionUrl, to: targetUrl)
-                    
-                    // Update card path
-                    switch change.slot {
-                    case .front: self.frontImagePath = targetPath
-                    case .back: self.backImagePath = targetPath
-                    case .insideLeft: self.insideLeftImagePath = targetPath
-                    case .insideRight: self.insideRightImagePath = targetPath
-                    }
-                    
-                    logger.info("Restored \(change.slot.rawValue) image")
-                } catch {
-                    logger.error("Failed to restore image: \(error.localizedDescription)")
-                }
+            switch change.slot {
+            case .front: self.frontImageData = restoredImageData
+            case .back: self.backImageData = restoredImageData
+            case .insideLeft: self.insideLeftImageData = restoredImageData
+            case .insideRight: self.insideRightImageData = restoredImageData
             }
+            
+            logger.info("Restored \(change.slot.rawValue) image")
         }
         
         // Record the restore action as a new snapshot
         if !newMetadataChanges.isEmpty || !newImageChanges.isEmpty {
             addSnapshot(metadataChanges: newMetadataChanges, imageChanges: newImageChanges)
+        }
+    }
+    
+    /// Helper to save a UIImage directly to version history
+    private func saveImageToVersionHistory(image: UIImage, cardId: UUID, versionNumber: Int, originalFileName: String) -> String? {
+        let fileManager = FileManager.default
+        let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let imagesDirectory = documentsDirectory.appendingPathComponent("CardImages", isDirectory: true)
+        
+        let versionDirName = "v\(versionNumber)"
+        let cardVersionsDir = imagesDirectory
+            .appendingPathComponent(cardId.uuidString, isDirectory: true)
+            .appendingPathComponent("versions", isDirectory: true)
+            .appendingPathComponent(versionDirName, isDirectory: true)
+        
+        do {
+            if !fileManager.fileExists(atPath: cardVersionsDir.path) {
+                try fileManager.createDirectory(at: cardVersionsDir, withIntermediateDirectories: true)
+            }
+            
+            let destinationURL = cardVersionsDir.appendingPathComponent(originalFileName)
+            
+            if let data = image.jpegData(compressionQuality: 0.8) {
+                try data.write(to: destinationURL)
+                return "CardImages/\(cardId.uuidString)/versions/\(versionDirName)/\(originalFileName)"
+            }
+            return nil
+        } catch {
+            logger.error("Failed to save version image directly: \(error.localizedDescription)")
+            return nil
         }
     }
     

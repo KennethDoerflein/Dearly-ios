@@ -247,7 +247,7 @@ Optional object containing AI-processed metadata from card images.
 
 1. **Verify ZIP structure**: Attempt to parse as a standard ZIP archive
 2. **Read manifest**: Extract and parse `manifest.json`
-3. **Validate version**: Check `formatVersion` is supported (currently must be `≤ 1`)
+3. **Validate version**: Check `formatVersion` is supported (currently must be `≤ 3`)
 4. **Validate required images**: Ensure `images.front` and `images.back` files exist in archive
 5. **Extract images**: Save images to local storage
 6. **Build card object**: Construct card data from manifest, linking to saved images
@@ -276,8 +276,10 @@ Exporters may use either compression method:
 
 | File Version | App Supports | Behavior                                       |
 | ------------ | ------------ | ---------------------------------------------- |
-| `1`          | `≥ 1`        | Full support                                   |
-| `> current`  | Any          | Reject with "unsupported version" error        |
+| `1`          | `≥ 1`        | Single card (Legacy)                           |
+| `2`          | `≥ 1.2`      | Single card with History                       |
+| `3`          | `≥ 1.3`      | Backup Bundle                                  |
+| `> 3`        | `≤ 1.3`      | Reject with "unsupported version" error        |
 
 > [!IMPORTANT]
 > When importing, implementations should **generate a new UUID** for the card to avoid ID conflicts with existing cards in the user's collection.

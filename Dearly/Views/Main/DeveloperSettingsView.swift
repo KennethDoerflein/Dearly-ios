@@ -149,7 +149,7 @@ struct DeveloperSettingsView: View {
             }
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [.data],
+                allowedContentTypes: [.data, .zip],
                 allowsMultipleSelection: false
             ) { result in
                 handleUnifiedFileImport(result: result)
@@ -198,7 +198,7 @@ struct DeveloperSettingsView: View {
         }
     }
     
-    private func handleFileImport(result: Result<[URL], Error>) {
+    private func handleUnifiedFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let fileURL = urls.first else {
@@ -222,9 +222,9 @@ struct DeveloperSettingsView: View {
                 let tempURL = try copyToTempDirectory(url: fileURL)
                 
                 // Use unified import that auto-detects type
-                let result = try DearlyFileService.shared.detectAndImport(from: tempURL, using: modelContext)
+                let importResult = try DearlyFileService.shared.detectAndImport(from: tempURL, using: modelContext)
                 
-                switch result {
+                switch importResult {
                 case .singleCard(let card):
                     // Single card was imported directly
                     try? FileManager.default.removeItem(at: tempURL)

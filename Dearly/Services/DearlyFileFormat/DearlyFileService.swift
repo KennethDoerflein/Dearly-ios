@@ -18,6 +18,9 @@ final class DearlyFileService {
     /// File manager instance
     private let fileManager = FileManager.default
     
+    /// Image storage service instance
+    private let imageStorage = ImageStorageService.shared
+    
     /// Supported image extensions
     private let supportedImageExtensions = ["jpg", "jpeg", "png", "webp", "heic"]
     
@@ -100,33 +103,16 @@ final class DearlyFileService {
         if includeHistory, let history = card.versionHistory {
             for snapshot in history {
                 for change in snapshot.imageChanges {
-                    // change.previousUri is relative path like "CardImages/{cardId}/versions/v1/front.jpg"
-                    // We want to store it in ZIP as "versions/v1/front.jpg"
-                    
-                    // 1. Locate source file
                     if let sourceURL = imageStorage.getImageURL(for: change.previousUri),
                        fileManager.fileExists(atPath: sourceURL.path) {
                         
-                        // 2. Determine dest path in ZIP
-                        // We strip the prefix "CardImages/{uuid}/" if present to get clean relative path
-                        let relativePath: String
-                        if change.previousUri.contains("/versions/") {
-                             let components = change.previousUri.components(separatedBy: "/versions/")
-                             if components.count > 1 {
-                                 relativePath = "versions/" + components[1]
-                             } else {
-                                 continue
-                             }
-                        } else {
-                            continue
-                        }
+                        let components = change.previousUri.components(separatedBy: "/versions/")
+                        guard components.count > 1 else { continue }
                         
+                        let relativePath = "versions/" + components[1]
                         let destURL = tempDir.appendingPathComponent(relativePath)
                         
-                        // Create subdirectories
                         try fileManager.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                        
-                        // Copy file
                         try fileManager.copyItem(at: sourceURL, to: destURL)
                     }
                 }
@@ -675,43 +661,37 @@ final class DearlyFileService {
         var importedCards: [Card] = []
         
         for cardData in cards {
-            // Skip if not in selected set
             if let selected = selectedIds, !selected.contains(cardData.id) {
                 continue
             }
             
             let cardId = generateNewIds ? UUID() : (UUID(uuidString: cardData.id) ?? UUID())
             
-            // Extract and save images
             let frontURL = tempDir.appendingPathComponent(cardData.images.front)
             guard fileManager.fileExists(atPath: frontURL.path),
-                  let frontImage = UIImage(contentsOfFile: frontURL.path),
-                  let frontPath = imageStorage.saveImage(frontImage, for: cardId, side: .front) else {
+                  let frontData = try? Data(contentsOf: frontURL) else {
                 continue
             }
             
             let backURL = tempDir.appendingPathComponent(cardData.images.back)
             guard fileManager.fileExists(atPath: backURL.path),
-                  let backImage = UIImage(contentsOfFile: backURL.path),
-                  let backPath = imageStorage.saveImage(backImage, for: cardId, side: .back) else {
+                  let backData = try? Data(contentsOf: backURL) else {
                 continue
             }
             
-            var insideLeftPath: String? = nil
+            var insideLeftData: Data? = nil
             if let insideLeft = cardData.images.insideLeft {
                 let insideLeftURL = tempDir.appendingPathComponent(insideLeft)
-                if fileManager.fileExists(atPath: insideLeftURL.path),
-                   let insideLeftImage = UIImage(contentsOfFile: insideLeftURL.path) {
-                    insideLeftPath = imageStorage.saveImage(insideLeftImage, for: cardId, side: .insideLeft)
+                if fileManager.fileExists(atPath: insideLeftURL.path) {
+                    insideLeftData = try? Data(contentsOf: insideLeftURL)
                 }
             }
             
-            var insideRightPath: String? = nil
+            var insideRightData: Data? = nil
             if let insideRight = cardData.images.insideRight {
                 let insideRightURL = tempDir.appendingPathComponent(insideRight)
-                if fileManager.fileExists(atPath: insideRightURL.path),
-                   let insideRightImage = UIImage(contentsOfFile: insideRightURL.path) {
-                    insideRightPath = imageStorage.saveImage(insideRightImage, for: cardId, side: .insideRight)
+                if fileManager.fileExists(atPath: insideRightURL.path) {
+                    insideRightData = try? Data(contentsOf: insideRightURL)
                 }
             }
             
@@ -727,10 +707,10 @@ final class DearlyFileService {
             // Create the new card
             let card = Card(
                 id: cardId,
-                frontImagePath: frontPath,
-                backImagePath: backPath,
-                insideLeftImagePath: insideLeftPath,
-                insideRightImagePath: insideRightPath,
+                frontImageData: frontData,
+                backImageData: backData,
+                insideLeftImageData: insideLeftData,
+                insideRightImageData: insideRightData,
                 dateScanned: Date(),
                 isFavorite: cardData.isFavorite,
                 sender: cardData.sender,
@@ -774,6 +754,21 @@ final class DearlyFileService {
         return importedCards
     }
     
+    /// Helper to load image data from an imported file
+    private func loadImportedImageData(filename: String, from baseDir: URL) throws -> Data {
+        let fileURL = baseDir.appendingPathComponent(filename)
+        
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            throw DearlyFileError.missingImage(filename)
+        }
+        
+        do {
+            return try Data(contentsOf: fileURL)
+        } catch {
+            throw DearlyFileError.fileOperationError("Failed to read image data: \(filename)")
+        }
+    }
+
     // MARK: - Private Methods - ZIP Operations
     
     /// Creates a ZIP archive from a directory using native approach
