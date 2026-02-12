@@ -11,6 +11,8 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @Binding var isOnboardingComplete: Bool
     
+    private let totalPages = 8
+    
     var body: some View {
         ZStack {
             // Warm gradient background
@@ -26,14 +28,31 @@ struct OnboardingView: View {
             .ignoresSafeArea()
             
             TabView(selection: $currentPage) {
+                // Feature selling screens
                 OnboardingPage1(currentPage: $currentPage)
                     .tag(0)
                 
                 OnboardingPage2(currentPage: $currentPage)
                     .tag(1)
                 
-                OnboardingPage3(currentPage: $currentPage, isOnboardingComplete: $isOnboardingComplete)
+                OnboardingPage3DViewer(currentPage: $currentPage)
                     .tag(2)
+                
+                OnboardingPage3(currentPage: $currentPage)
+                    .tag(3)
+                
+                OnboardingPageCloudSync(currentPage: $currentPage)
+                    .tag(4)
+                
+                OnboardingPageAIFuture(currentPage: $currentPage)
+                    .tag(5)
+                
+                // Pre-paywall priming screens (CalAI strategy)
+                OnboardingPageTrialIntro(currentPage: $currentPage)
+                    .tag(6)
+                
+                OnboardingPageTrustBuild(currentPage: $currentPage, isOnboardingComplete: $isOnboardingComplete)
+                    .tag(7)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             
@@ -41,7 +60,7 @@ struct OnboardingView: View {
             VStack {
                 Spacer()
                 HStack(spacing: 8) {
-                    ForEach(0..<3, id: \.self) { index in
+                    ForEach(0..<totalPages, id: \.self) { index in
                         Capsule()
                             .fill(currentPage == index ? 
                                   Color(red: 0.85, green: 0.55, blue: 0.55) : 
