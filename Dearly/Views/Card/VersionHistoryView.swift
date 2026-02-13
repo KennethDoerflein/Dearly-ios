@@ -42,7 +42,7 @@ struct VersionHistoryView: View {
                                     versionToRestore = snapshot
                                     showingRestoreConfirmation = true
                                 } label: {
-                                    Label("Restore", systemImage: "arrow.counterclockwise")
+                                    Label("Undo", systemImage: "arrow.uturn.backward")
                                 }
                                 .tint(.blue)
                             }
@@ -59,19 +59,19 @@ struct VersionHistoryView: View {
                 }
             }
             .confirmationDialog(
-                "Restore Version?",
+                "Undo This Change?",
                 isPresented: $showingRestoreConfirmation,
                 titleVisibility: .visible,
                 presenting: versionToRestore
             ) { snapshot in
-                Button("Restore Version \(snapshot.versionNumber)") {
+                Button("Undo Change") {
                     restoreVersion(snapshot)
                 }
                 Button("Cancel", role: .cancel) {
                     versionToRestore = nil
                 }
             } message: { snapshot in
-                Text("Current changes will be saved as a new version before restoring. Are you sure you want to restore Version \(snapshot.versionNumber)?")
+                Text(undoDescription(for: snapshot))
             }
         }
     }
@@ -83,6 +83,21 @@ struct VersionHistoryView: View {
     private func restoreVersion(_ snapshot: CardVersionSnapshot) {
         card.restore(to: snapshot)
         dismiss() // Dismiss after restore to show result
+    }
+    
+    private func undoDescription(for snapshot: CardVersionSnapshot) -> String {
+        var parts: [String] = []
+        for change in snapshot.metadataChanges {
+            let fieldName = change.field.rawValue
+            let from = change.newValue ?? "Empty"
+            let to = change.previousValue ?? "Empty"
+            parts.append("\(fieldName) will revert from \"\(from)\" back to \"\(to)\"")
+        }
+        if !snapshot.imageChanges.isEmpty {
+            let slots = snapshot.imageChanges.map { $0.slot.rawValue.capitalized }
+            parts.append("\(slots.joined(separator: ", ")) image(s) will be reverted")
+        }
+        return parts.isEmpty ? "Undo this change?" : parts.joined(separator: "\n")
     }
 }
 

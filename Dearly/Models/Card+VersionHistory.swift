@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 import os.log
 
 private let logger = Logger(subsystem: "com.dearly.app", category: "VersionHistory")
@@ -72,12 +73,12 @@ extension Card {
         logger.info("Deleted snapshot v\(snapshot.versionNumber)")
     }
     
-    /// Restores card to a previous version
+    /// Restores card by undoing the changes in a specific version snapshot
     func restore(to snapshot: CardVersionSnapshot, using imageStorage: ImageStorageService = .shared) {
         var newMetadataChanges: [MetadataChange] = []
         var newImageChanges: [ImageChange] = []
         
-        // Restore all metadata fields
+        // Undo metadata changes: restore each field to its previousValue
         for change in snapshot.metadataChanges {
             guard let previousValue = change.previousValue else { continue }
             

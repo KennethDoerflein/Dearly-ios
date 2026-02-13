@@ -1,4 +1,4 @@
-﻿//
+//
 //  DearlyFileService.swift
 //  Dearly
 //
@@ -273,16 +273,16 @@ final class DearlyFileService {
         let newCardId = UUID()
         
         // Load images as Data (stored directly in SwiftData)
-        let frontData = try loadImportedImageData(filename: manifest.images.front, from: tempDir)
-        let backData = try loadImportedImageData(filename: manifest.images.back, from: tempDir)
+        let frontData = try loadImportedImageData(filename: images.front, from: tempDir)
+        let backData = try loadImportedImageData(filename: images.back, from: tempDir)
         
         var insideLeftData: Data? = nil
-        if let insideLeftFilename = manifest.images.insideLeft {
+        if let insideLeftFilename = images.insideLeft {
             insideLeftData = try loadImportedImageData(filename: insideLeftFilename, from: tempDir)
         }
         
         var insideRightData: Data? = nil
-        if let insideRightFilename = manifest.images.insideRight {
+        if let insideRightFilename = images.insideRight {
             insideRightData = try loadImportedImageData(filename: insideRightFilename, from: tempDir)
         }
         
@@ -754,21 +754,6 @@ final class DearlyFileService {
         return importedCards
     }
     
-    /// Helper to load image data from an imported file
-    private func loadImportedImageData(filename: String, from baseDir: URL) throws -> Data {
-        let fileURL = baseDir.appendingPathComponent(filename)
-        
-        guard fileManager.fileExists(atPath: fileURL.path) else {
-            throw DearlyFileError.missingImage(filename)
-        }
-        
-        do {
-            return try Data(contentsOf: fileURL)
-        } catch {
-            throw DearlyFileError.fileOperationError("Failed to read image data: \(filename)")
-        }
-    }
-
     // MARK: - Private Methods - ZIP Operations
     
     /// Creates a ZIP archive from a directory using native approach
