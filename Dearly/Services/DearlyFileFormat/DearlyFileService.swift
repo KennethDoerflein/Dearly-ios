@@ -359,6 +359,8 @@ final class DearlyFileService {
             occasion: cardData.occasion,
             dateReceived: cardDate,
             notes: cardData.notes,
+            isFromUser: cardData.isFromUser ?? false,
+            recipient: cardData.recipient,
             versionHistory: importedHistory
         )
         
@@ -716,7 +718,9 @@ final class DearlyFileService {
                 sender: cardData.sender,
                 occasion: cardData.occasion,
                 dateReceived: cardDate,
-                notes: cardData.notes
+                notes: cardData.notes,
+                isFromUser: cardData.isFromUser ?? false,
+                recipient: cardData.recipient
             )
             
             // Set extended properties

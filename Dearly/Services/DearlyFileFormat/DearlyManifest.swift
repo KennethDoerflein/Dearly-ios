@@ -102,6 +102,8 @@ struct DearlyCardWithImages: Codable {
     let aiExtractedData: DearlyAIExtractedData?
     let createdAt: String?
     let updatedAt: String?
+    let isFromUser: Bool?
+    let recipient: String?
     let images: DearlyImages
     
     /// Creates a DearlyCardWithImages from a Card model
@@ -152,6 +154,8 @@ struct DearlyCardWithImages: Codable {
             aiExtractedData: aiData,
             createdAt: card.createdAt.map { isoFormatter.string(from: $0) },
             updatedAt: card.updatedAt.map { isoFormatter.string(from: $0) },
+            isFromUser: card.isFromUser ? true : nil,
+            recipient: card.recipient,
             images: images
         )
     }
@@ -199,6 +203,12 @@ struct DearlyCardData: Codable {
     
     /// ISO 8601 timestamp when last modified (optional)
     let updatedAt: String?
+    
+    /// Whether the user sent this card (optional, defaults to false/nil for received cards)
+    let isFromUser: Bool?
+    
+    /// Who the user sent the card to (optional, only when isFromUser == true)
+    let recipient: String?
     
     /// Creates a DearlyCardData from a Card model
     static func from(_ card: Card) -> DearlyCardData {
@@ -249,7 +259,9 @@ struct DearlyCardData: Codable {
             aspectRatio: card.aspectRatio,
             aiExtractedData: aiData,
             createdAt: card.createdAt.map { isoFormatter.string(from: $0) },
-            updatedAt: card.updatedAt.map { isoFormatter.string(from: $0) }
+            updatedAt: card.updatedAt.map { isoFormatter.string(from: $0) },
+            isFromUser: card.isFromUser ? true : nil,
+            recipient: card.recipient
         )
     }
 }

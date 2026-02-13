@@ -17,6 +17,8 @@ struct CardMetadataView: View {
     @State private var dateReceived: Date
     @State private var notes: String
     @State private var hasDateReceived: Bool
+    @State private var isFromUser: Bool
+    @State private var recipient: String
     
     let occasionOptions = [
         "Birthday",
@@ -39,6 +41,8 @@ struct CardMetadataView: View {
         _dateReceived = State(initialValue: card.wrappedValue.dateReceived ?? Date())
         _notes = State(initialValue: card.wrappedValue.notes ?? "")
         _hasDateReceived = State(initialValue: card.wrappedValue.dateReceived != nil)
+        _isFromUser = State(initialValue: card.wrappedValue.isFromUser)
+        _recipient = State(initialValue: card.wrappedValue.recipient ?? "")
     }
     
     var body: some View {
@@ -71,20 +75,56 @@ struct CardMetadataView: View {
                             .padding(.top, 16)
                             .padding(.bottom, 12)
                             
-                            // From Field
+                            // Card Origin Toggle
                             VStack(spacing: 0) {
                                 HStack {
-                                    Text("From")
+                                    Text("This card was")
                                         .font(.system(size: 15, weight: .medium, design: .rounded))
                                         .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
                                     Spacer()
-                                    TextField("Who sent this card?", text: $sender)
-                                        .font(.system(size: 15, design: .rounded))
-                                        .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
-                                        .multilineTextAlignment(.trailing)
+                                    Picker("Origin", selection: $isFromUser) {
+                                        Text("Received").tag(false)
+                                        Text("Sent by me").tag(true)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .frame(width: 200)
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
+                                
+                                Divider()
+                                    .padding(.leading, 16)
+                            }
+                            
+                            // From / To Field
+                            VStack(spacing: 0) {
+                                if isFromUser {
+                                    HStack {
+                                        Text("To")
+                                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                                            .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                        Spacer()
+                                        TextField("Who did you send it to?", text: $recipient)
+                                            .font(.system(size: 15, design: .rounded))
+                                            .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
+                                            .multilineTextAlignment(.trailing)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                } else {
+                                    HStack {
+                                        Text("From")
+                                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                                            .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                        Spacer()
+                                        TextField("Who sent this card?", text: $sender)
+                                            .font(.system(size: 15, design: .rounded))
+                                            .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
+                                            .multilineTextAlignment(.trailing)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
                                 
                                 Divider()
                                     .padding(.leading, 16)
@@ -244,6 +284,8 @@ struct CardMetadataView: View {
         card.occasion = occasion.isEmpty ? nil : occasion
         card.dateReceived = newDate
         card.notes = notes.isEmpty ? nil : notes
+        card.isFromUser = isFromUser
+        card.recipient = isFromUser && !recipient.trimmingCharacters(in: .whitespaces).isEmpty ? recipient.trimmingCharacters(in: .whitespaces) : nil
     }
 }
 

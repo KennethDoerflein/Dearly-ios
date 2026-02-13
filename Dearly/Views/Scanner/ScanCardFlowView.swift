@@ -89,6 +89,8 @@ struct ScanCardFlowView: View {
     
     @State private var flowState: ScanFlowState = .selectingCardType
     @State private var selectedCardType: CardType = .traditional
+    @State private var isFromUser: Bool = false
+    @State private var recipient: String = ""
     @State private var frontImage: UIImage?
     @State private var backImage: UIImage?
     @State private var insideLeftImage: UIImage?
@@ -247,6 +249,41 @@ struct ScanCardFlowView: View {
                 }
             }
             .padding(.horizontal, 24)
+            
+            // Card origin section
+            VStack(spacing: 12) {
+                Text("This card was...")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundColor(Color(red: 0.25, green: 0.20, blue: 0.20))
+                
+                Picker("Card Origin", selection: $isFromUser) {
+                    Text("Received").tag(false)
+                    Text("Sent by me").tag(true)
+                }
+                .pickerStyle(.segmented)
+                
+                if isFromUser {
+                    HStack {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                            .font(.system(size: 16))
+                        
+                        TextField("Who did you send it to?", text: $recipient)
+                            .font(.system(.body, design: .rounded))
+                            .textContentType(.name)
+                            .autocorrectionDisabled()
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white)
+                            .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(.horizontal, 24)
+            .animation(.easeInOut(duration: 0.25), value: isFromUser)
             
             Spacer()
             
@@ -464,7 +501,9 @@ struct ScanCardFlowView: View {
             frontImage: frontImage,
             backImage: backImage,
             insideLeftImage: selectedCardType == .traditional ? insideLeftImage : nil,
-            insideRightImage: selectedCardType == .traditional ? insideRightImage : nil
+            insideRightImage: selectedCardType == .traditional ? insideRightImage : nil,
+            isFromUser: isFromUser,
+            recipient: isFromUser && !recipient.trimmingCharacters(in: .whitespaces).isEmpty ? recipient.trimmingCharacters(in: .whitespaces) : nil
         )
         
         savedCard = card
@@ -490,6 +529,8 @@ struct ScanCardFlowView: View {
         insideRightImage = nil
         savedCard = nil
         currentScanSide = .front
+        isFromUser = false
+        recipient = ""
         
         withAnimation(.easeInOut(duration: 0.3)) {
             flowState = .selectingCardType
