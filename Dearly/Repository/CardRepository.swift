@@ -8,6 +8,9 @@
 import Foundation
 import SwiftData
 import UIKit
+import os.log
+
+private let logger = Logger(subsystem: "com.dearly.app", category: "CardRepository")
 
 /// Repository for managing Card persistence with SwiftData
 /// Images are now stored directly in SwiftData and sync via CloudKit
@@ -31,7 +34,7 @@ final class CardRepository {
             print("📦 CardRepository.fetchAllCards: Found \(cards.count) cards in SwiftData")
             return cards
         } catch {
-            print("❌ Failed to fetch cards: \(error.localizedDescription)")
+            logger.error("Failed to fetch cards: \(error.localizedDescription)")
             return []
         }
     }
@@ -61,10 +64,11 @@ final class CardRepository {
             try modelContext.save()
             print("💾 CardRepository.save: Context saved successfully")
         } catch {
-            print("❌ Failed to save context: \(error.localizedDescription)")
+            logger.error("Failed to save context: \(error.localizedDescription)")
         }
     }
     
+
     // MARK: - Utility
     
     /// Clears all cards (for testing/reset)
@@ -75,3 +79,4 @@ final class CardRepository {
         }
     }
 }
+

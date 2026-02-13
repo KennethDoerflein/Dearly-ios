@@ -21,6 +21,9 @@ struct CardDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var resetTrigger = false
     @State private var showingMetadataEdit = false
+    @State private var showingHistory = false
+    @State private var showingExportOptions = false
+    @State private var exportWithHistory = true
     @State private var showingShareSheet = false
     @State private var particleOffset: CGFloat = 0
     @State private var heartScale: CGFloat = 1.0
@@ -92,10 +95,42 @@ struct CardDetailView: View {
                     
                     // Right group - Primary actions
                     HStack(spacing: 12) {
+                        // History Badge
+                        if let historyCount = card?.versionHistory?.count, historyCount > 0 {
+                            Button(action: {
+                                showingHistory = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text("\(historyCount)")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .frame(height: 44)
+                                .background(
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(.ultraThinMaterial.opacity(0.5))
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                                    }
+                                )
+                                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                            }
+                        }
+                        
                         GlassButton(icon: "square.and.arrow.up", color: .white) {
                             let impact = UIImpactFeedbackGenerator(style: .medium)
                             impact.impactOccurred()
-                            showingShareSheet = true
+                            
+                            if let count = card?.versionHistory?.count, count > 0 {
+                                showingExportOptions = true
+                            } else {
+                                exportWithHistory = false
+                                showingShareSheet = true
+                            }
                         }
                         
                         GlassButton(icon: "info.circle", color: .white) {
@@ -268,17 +303,33 @@ struct CardDetailView: View {
         }
         .sheet(isPresented: $showingShareSheet) {
             if let card = card {
-                ShareSheet(items: shareItems(for: card))
+                ShareSheet(items: shareItems(for: card, includeHistory: exportWithHistory))
+            }
+        }
+        .confirmationDialog("Share Options", isPresented: $showingExportOptions, titleVisibility: .visible) {
+            Button("Share with History") {
+                exportWithHistory = true
+                showingShareSheet = true
+            }
+            Button("Share Latest Only") {
+                exportWithHistory = false
+                showingShareSheet = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showingHistory) {
+            if let index = viewModel.cards.firstIndex(where: { $0.id == cardId }) {
+                VersionHistoryView(card: $viewModel.cards[index])
             }
         }
     }
     
-    private func shareItems(for card: Card) -> [Any] {
+    private func shareItems(for card: Card, includeHistory: Bool) -> [Any] {
         var items: [Any] = []
         
         // Try to export as .dearly file first
         do {
-            let exportURL = try DearlyFileService.shared.exportCard(card)
+            let exportURL = try DearlyFileService.shared.exportCard(card, includeHistory: includeHistory)
             items.append(exportURL)
         } catch {
             print("⚠️ Failed to export .dearly file: \(error.localizedDescription)")

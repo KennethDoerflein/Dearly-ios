@@ -214,9 +214,35 @@ struct CardMetadataView: View {
     }
     
     private func saveMetadata() {
+        // Calculate changes
+        var changes: [MetadataChange] = []
+        
+        if let change = Card.compare(.sender, old: card.sender, new: sender.isEmpty ? nil : sender) {
+            changes.append(change)
+        }
+        
+        if let change = Card.compare(.occasion, old: card.occasion, new: occasion.isEmpty ? nil : occasion) {
+            changes.append(change)
+        }
+        
+        let newDate = hasDateReceived ? dateReceived : nil
+        if let change = Card.compare(.dateReceived, old: card.dateReceived, new: newDate) {
+            changes.append(change)
+        }
+        
+        if let change = Card.compare(.notes, old: card.notes, new: notes.isEmpty ? nil : notes) {
+            changes.append(change)
+        }
+        
+        // Create snapshot BEFORE applying changes
+        if !changes.isEmpty {
+            card.addSnapshot(metadataChanges: changes, imageChanges: [])
+        }
+        
+        // Apply changes
         card.sender = sender.isEmpty ? nil : sender
         card.occasion = occasion.isEmpty ? nil : occasion
-        card.dateReceived = hasDateReceived ? dateReceived : nil
+        card.dateReceived = newDate
         card.notes = notes.isEmpty ? nil : notes
     }
 }

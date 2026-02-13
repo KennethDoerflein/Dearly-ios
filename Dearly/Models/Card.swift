@@ -48,6 +48,9 @@ final class Card {
     var aiErrorMessage: String?
     var aiErrorRetryable: Bool?
     
+    // Version History
+    var versionHistory: [CardVersionSnapshot]?
+    
     init(
         id: UUID = UUID(),
         frontImageData: Data? = nil,
@@ -59,7 +62,8 @@ final class Card {
         sender: String? = nil,
         occasion: String? = nil,
         dateReceived: Date? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        versionHistory: [CardVersionSnapshot]? = nil
     ) {
         self.id = id
         self.frontImageData = frontImageData
@@ -72,6 +76,7 @@ final class Card {
         self.occasion = occasion
         self.dateReceived = dateReceived
         self.notes = notes
+        self.versionHistory = versionHistory
     }
     
     // MARK: - Computed Properties for Image Loading

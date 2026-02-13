@@ -161,5 +161,81 @@ final class ImageStorageService {
             }
         }
     }
+    
+    // MARK: - Version History Support
+    
+    /// Saves a copy of an existing image to the version history folder
+    /// - Parameters:
+    ///   - relativePath: The current relative path of the image
+    ///   - cardId: The unique identifier of the card
+    ///   - versionNumber: The version number to save under
+    /// - Returns: The new relative path for the versioned image, or nil if failed
+    func saveVersionImage(from relativePath: String, for cardId: UUID, versionNumber: Int) -> String? {
+        guard let sourceURL = getImageURL(for: relativePath),
+              fileManager.fileExists(atPath: sourceURL.path) else {
+            return nil
+        }
+        
+        let versionDirName = "v\(versionNumber)"
+        let cardVersionsDir = imagesDirectory
+            .appendingPathComponent(cardId.uuidString, isDirectory: true)
+            .appendingPathComponent("versions", isDirectory: true)
+            .appendingPathComponent(versionDirName, isDirectory: true)
+        
+        do {
+            if !fileManager.fileExists(atPath: cardVersionsDir.path) {
+                try fileManager.createDirectory(at: cardVersionsDir, withIntermediateDirectories: true)
+            }
+            
+            let originalFileName = sourceURL.lastPathComponent
+            let destinationURL = cardVersionsDir.appendingPathComponent(originalFileName)
+            
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+            
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            
+            return "CardImages/\(cardId.uuidString)/versions/\(versionDirName)/\(originalFileName)"
+        } catch {
+            print("❌ Failed to save version image: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
+    /// Deletes a specific version directory for a card
+    /// - Parameters:
+    ///   - cardId: The unique identifier of the card
+    ///   - versionNumber: The version number to delete
+    func deleteVersion(for cardId: UUID, versionNumber: Int) {
+        let versionDirName = "v\(versionNumber)"
+        let versionDir = imagesDirectory
+            .appendingPathComponent(cardId.uuidString, isDirectory: true)
+            .appendingPathComponent("versions", isDirectory: true)
+            .appendingPathComponent(versionDirName, isDirectory: true)
+        
+        do {
+            if fileManager.fileExists(atPath: versionDir.path) {
+                try fileManager.removeItem(at: versionDir)
+                print("✅ Deleted version directory: \(versionDirName)")
+            }
+        } catch {
+            print("❌ Failed to delete version directory: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Deletes a specific image file from version history
+    /// - Parameter relativePath: Relative path to the versioned image
+    func deleteVersionImage(at relativePath: String) {
+        guard let url = getImageURL(for: relativePath) else { return }
+        do {
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+                print("✅ Deleted version image at: \(relativePath)")
+            }
+        } catch {
+            print("❌ Failed to delete version image: \(error.localizedDescription)")
+        }
+    }
 }
 

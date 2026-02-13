@@ -22,6 +22,13 @@ struct DeveloperSettingsView: View {
     @State private var importResultMessage = ""
     @State private var importSucceeded = false
     
+    // Backup/Restore state
+    @State private var showingRestorePreview = false
+    @State private var restorePreviews: [RestoreCardPreview] = []
+    @State private var restoreFileURL: URL? = nil
+    @State private var isExportingBackup = false
+    @State private var isProcessingRestore = false
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -113,6 +120,21 @@ struct DeveloperSettingsView: View {
                             Spacer()
                         }
                     }
+                    
+                    Button(action: {
+                        createBackup()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.up.doc.fill")
+                                .foregroundColor(.green)
+                            Text("Create Backup")
+                            Spacer()
+                            if isExportingBackup {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(viewModel.cards.isEmpty || isExportingBackup)
                 }
             }
             .navigationTitle("Developer Settings")
@@ -127,10 +149,33 @@ struct DeveloperSettingsView: View {
             }
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [.data],
+                allowedContentTypes: [.data, .zip],
                 allowsMultipleSelection: false
             ) { result in
-                handleFileImport(result: result)
+                handleUnifiedFileImport(result: result)
+            }
+            .sheet(isPresented: $showingRestorePreview) {
+                if isProcessingRestore {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Restoring cards...")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    RestorePreviewView(
+                        previews: restorePreviews,
+                        onRestore: { selectedIds in
+                            restoreCards(selectedIds: selectedIds)
+                        },
+                        onCancel: {
+                            showingRestorePreview = false
+                            restoreFileURL = nil
+                            restorePreviews = []
+                        }
+                    )
+                }
             }
             .alert(importSucceeded ? "Import Successful" : "Import Failed", isPresented: $showingImportResult) {
                 Button("OK") {
@@ -153,7 +198,7 @@ struct DeveloperSettingsView: View {
         }
     }
     
-    private func handleFileImport(result: Result<[URL], Error>) {
+    private func handleUnifiedFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let fileURL = urls.first else {
@@ -175,31 +220,95 @@ struct DeveloperSettingsView: View {
             do {
                 // Copy file to temp directory to ensure we have access
                 let tempURL = try copyToTempDirectory(url: fileURL)
-                defer {
+                
+                // Use unified import that auto-detects type
+                let importResult = try DearlyFileService.shared.detectAndImport(from: tempURL, using: modelContext)
+                
+                switch importResult {
+                case .singleCard(let card):
+                    // Single card was imported directly
                     try? FileManager.default.removeItem(at: tempURL)
+                    
+                    importResultMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
+                    importSucceeded = true
+                    showingImportResult = true
+                    viewModel.loadCards()
+                    
+                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                    impact.impactOccurred()
+                    
+                case .backupBundle(let previews):
+                    // Backup bundle detected - show preview for selection
+                    restoreFileURL = tempURL
+                    restorePreviews = previews.map { preview in
+                        RestoreCardPreview(
+                            id: preview.id,
+                            sender: preview.sender,
+                            occasion: preview.occasion,
+                            date: preview.date,
+                            thumbnail: preview.thumbnailData.flatMap { UIImage(data: $0) }
+                        )
+                    }
+                    showingRestorePreview = true
                 }
-                
-                let card = try DearlyFileService.shared.importCard(from: tempURL, using: modelContext)
-                importResultMessage = "Successfully imported card from \(card.sender ?? "unknown sender")"
-                importSucceeded = true
-                
-                // Haptic feedback
-                let impact = UIImpactFeedbackGenerator(style: .medium)
-                impact.impactOccurred()
             } catch let error as DearlyFileError {
                 importResultMessage = error.localizedDescription
                 importSucceeded = false
+                showingImportResult = true
             } catch {
                 importResultMessage = "Could not access the selected file: \(error.localizedDescription)"
                 importSucceeded = false
+                showingImportResult = true
             }
-            
-            showingImportResult = true
             
         case .failure(let error):
             importResultMessage = error.localizedDescription
             importSucceeded = false
             showingImportResult = true
+        }
+    }
+    
+    private func restoreCards(selectedIds: Set<String>) {
+        guard let fileURL = restoreFileURL else { return }
+        
+        isProcessingRestore = true
+        
+        Task {
+            do {
+                let cards = try DearlyFileService.shared.importCardsFromBackup(
+                    from: fileURL,
+                    using: modelContext,
+                    selectedIds: selectedIds
+                )
+                
+                await MainActor.run {
+                    isProcessingRestore = false
+                    showingRestorePreview = false
+                    restorePreviews = []
+                    
+                    importResultMessage = "Successfully restored \(cards.count) card(s)"
+                    importSucceeded = true
+                    showingImportResult = true
+                    
+                    viewModel.loadCards()
+                    
+                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                    impact.impactOccurred()
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessingRestore = false
+                    showingRestorePreview = false
+                    
+                    importResultMessage = "Failed to restore: \(error.localizedDescription)"
+                    importSucceeded = false
+                    showingImportResult = true
+                }
+            }
+            
+            // Cleanup temp file
+            try? FileManager.default.removeItem(at: fileURL)
+            restoreFileURL = nil
         }
     }
     
@@ -210,6 +319,38 @@ struct DeveloperSettingsView: View {
         let tempURL = tempDir.appendingPathComponent(url.lastPathComponent)
         try FileManager.default.copyItem(at: url, to: tempURL)
         return tempURL
+    }
+    
+    private func createBackup() {
+        isExportingBackup = true
+        
+        Task {
+            do {
+                let exportURL = try DearlyFileService.shared.exportCardsToBackup(viewModel.cards)
+                
+                await MainActor.run {
+                    isExportingBackup = false
+                    
+                    // Share the backup file
+                    let activityVC = UIActivityViewController(
+                        activityItems: [exportURL],
+                        applicationActivities: nil
+                    )
+                    
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootVC = windowScene.windows.first?.rootViewController {
+                        rootVC.present(activityVC, animated: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isExportingBackup = false
+                    importResultMessage = "Failed to create backup: \(error.localizedDescription)"
+                    importSucceeded = false
+                    showingImportResult = true
+                }
+            }
+        }
     }
     
     private func resetOnboarding() {
