@@ -13,6 +13,7 @@ enum SortOption: String, CaseIterable {
     case newest = "Newest"
     case oldest = "Oldest"
     case favorites = "Favorites"
+    case byYou = "By You"
 }
 
 @MainActor
@@ -61,6 +62,8 @@ class CardsViewModel: ObservableObject {
             return filtered.sorted { $0.dateScanned < $1.dateScanned }
         case .favorites:
             return filtered.filter { $0.isFavorite }
+        case .byYou:
+            return filtered.filter { $0.isFromUser }.sorted { $0.dateScanned > $1.dateScanned }
         }
     }
     
@@ -81,6 +84,10 @@ class CardsViewModel: ObservableObject {
                 }
                 // Search by notes
                 if let notes = card.notes, notes.lowercased().contains(searchLower) {
+                    return true
+                }
+                // Search by recipient
+                if let recipient = card.recipient, recipient.lowercased().contains(searchLower) {
                     return true
                 }
                 return false
@@ -198,7 +205,9 @@ class CardsViewModel: ObservableObject {
         sender: String? = nil,
         occasion: String? = nil,
         dateReceived: Date? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        isFromUser: Bool = false,
+        recipient: String? = nil
     ) -> Card {
         // Convert images to Data (stored directly in SwiftData, syncs via CloudKit)
         let frontData = frontImage?.jpegData(compressionQuality: imageCompressionQuality)
@@ -218,7 +227,9 @@ class CardsViewModel: ObservableObject {
             sender: sender,
             occasion: occasion,
             dateReceived: dateReceived,
-            notes: notes
+            notes: notes,
+            isFromUser: isFromUser,
+            recipient: recipient
         )
         
         repository?.addCard(card)

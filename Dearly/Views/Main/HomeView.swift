@@ -106,6 +106,8 @@ struct HomeView: View {
                         EmptySearchResultsView(searchText: viewModel.searchText)
                     } else if viewModel.sortOption == .favorites && viewModel.sortedCards.isEmpty {
                         EmptyFavoritesView()
+                    } else if viewModel.sortOption == .byYou && viewModel.sortedCards.isEmpty {
+                        EmptyByYouView()
                     } else {
                         CardsGridView(viewModel: viewModel)
                     }
@@ -455,7 +457,7 @@ struct SearchBarView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
                 
-                TextField("Search by sender, occasion, or notes...", text: $searchText)
+                TextField("Search by sender, recipient, occasion, or notes...", text: $searchText)
                     .font(.system(size: 15, design: .rounded))
                     .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
                     .focused(isSearchFocused)
@@ -674,6 +676,51 @@ struct EmptyFavoritesView: View {
                     .foregroundColor(Color(red: 0.35, green: 0.30, blue: 0.30))
                 
                 Text("Mark your most cherished cards as favorites\nby tapping the heart icon.")
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 40)
+            }
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Empty By You View
+struct EmptyByYouView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            // Paper plane icon with subtle glow
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.95, green: 0.90, blue: 0.88).opacity(0.6))
+                    .frame(width: 120, height: 120)
+                    .blur(radius: 20)
+                
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 50))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.90, green: 0.60, blue: 0.60),
+                                Color(red: 0.80, green: 0.50, blue: 0.55)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+            
+            VStack(spacing: 12) {
+                Text("No Sent Cards Yet")
+                    .font(.custom("Snell Roundhand", size: 28))
+                    .foregroundColor(Color(red: 0.35, green: 0.30, blue: 0.30))
+                
+                Text("Keep a memory of cards you've sent to others.\nTap + and choose \"Sent by me\" when scanning.")
                     .font(.system(size: 15, weight: .regular, design: .rounded))
                     .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
                     .multilineTextAlignment(.center)

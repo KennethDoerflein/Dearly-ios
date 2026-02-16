@@ -80,6 +80,7 @@ enum ScanSide: Int, CaseIterable {
 enum ScanFlowState {
     case selectingCardType
     case scanning
+    case addingDetails
     case celebration
 }
 
@@ -89,6 +90,8 @@ struct ScanCardFlowView: View {
     
     @State private var flowState: ScanFlowState = .selectingCardType
     @State private var selectedCardType: CardType = .traditional
+    @State private var isFromUser: Bool = false
+    @State private var recipient: String = ""
     @State private var frontImage: UIImage?
     @State private var backImage: UIImage?
     @State private var insideLeftImage: UIImage?
@@ -96,6 +99,19 @@ struct ScanCardFlowView: View {
     @State private var currentScanSide: ScanSide = .front
     @State private var showScanner = false
     @State private var savedCard: Card?
+    
+    // Metadata fields for the details step
+    @State private var sender: String = ""
+    @State private var occasion: String = ""
+    @State private var dateReceived: Date = Date()
+    @State private var hasDateReceived: Bool = false
+    @State private var notes: String = ""
+    
+    private let occasionOptions = [
+        "Birthday", "Holiday", "Anniversary", "Thank You",
+        "Just Because", "Get Well", "Sympathy",
+        "Congratulations", "Love", "Friendship", "Other"
+    ]
     
     private var isComplete: Bool {
         switch selectedCardType {
@@ -150,12 +166,13 @@ struct ScanCardFlowView: View {
                     cardTypeSelectionView
                 case .scanning:
                     scanningView
+                case .addingDetails:
+                    addDetailsView
                 case .celebration:
                     if let card = savedCard {
                         CelebrationView(
                             card: card,
                             onAddDetails: {
-                                // TODO: Navigate to add details
                                 dismiss()
                             },
                             onScanAnother: {
@@ -174,15 +191,32 @@ struct ScanCardFlowView: View {
             .toolbar {
                 if flowState != .celebration {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+                        if flowState == .addingDetails {
+                            Button("Back") {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    flowState = .scanning
+                                }
+                            }
+                            .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                        } else {
+                            Button("Cancel") { dismiss() }
+                        }
                     }
                 }
                 if flowState == .scanning {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
-                            saveCard()
+                            goToDetails()
                         }
                         .disabled(!isComplete)
+                    }
+                }
+                if flowState == .addingDetails {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Skip") {
+                            saveCard()
+                        }
+                        .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
                     }
                 }
             }
@@ -247,6 +281,41 @@ struct ScanCardFlowView: View {
                 }
             }
             .padding(.horizontal, 24)
+            
+            // Card origin section
+            VStack(spacing: 12) {
+                Text("This card was...")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundColor(Color(red: 0.25, green: 0.20, blue: 0.20))
+                
+                Picker("Card Origin", selection: $isFromUser) {
+                    Text("Received").tag(false)
+                    Text("Sent by me").tag(true)
+                }
+                .pickerStyle(.segmented)
+                
+                if isFromUser {
+                    HStack {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                            .font(.system(size: 16))
+                        
+                        TextField("Who did you send it to?", text: $recipient)
+                            .font(.system(.body, design: .rounded))
+                            .textContentType(.name)
+                            .autocorrectionDisabled()
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white)
+                            .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(.horizontal, 24)
+            .animation(.easeInOut(duration: 0.25), value: isFromUser)
             
             Spacer()
             
@@ -382,10 +451,10 @@ struct ScanCardFlowView: View {
             // Bottom button
             VStack(spacing: 12) {
                 if isComplete {
-                    Button(action: saveCard) {
+                    Button(action: goToDetails) {
                         HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                            Text("Save Card")
+                            Image(systemName: "arrow.right.circle.fill")
+                            Text("Next: Add Details")
                         }
                         .font(.system(.headline, design: .rounded, weight: .semibold))
                         .foregroundColor(.white)
@@ -458,13 +527,227 @@ struct ScanCardFlowView: View {
         notification.notificationOccurred(.success)
     }
     
+    private func goToDetails() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            flowState = .addingDetails
+        }
+        let impact = UIImpactFeedbackGenerator(style: .light)
+        impact.impactOccurred()
+    }
+    
+    // MARK: - Add Details View
+    private var addDetailsView: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    VStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(red: 0.85, green: 0.55, blue: 0.55).opacity(0.15))
+                                .frame(width: 64, height: 64)
+                            
+                            Image(systemName: "pencil.and.list.clipboard")
+                                .font(.system(size: 28))
+                                .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                        }
+                        
+                        Text("Add Details")
+                            .font(.system(.title2, design: .rounded, weight: .bold))
+                            .foregroundColor(Color(red: 0.25, green: 0.20, blue: 0.20))
+                        
+                        Text("Fill in what you know — you can always edit later")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 16)
+                    
+                    // Card Details Section
+                    VStack(spacing: 0) {
+                        // Section Header
+                        HStack {
+                            Text("Card Details")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.40, green: 0.32, blue: 0.32))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 12)
+                        
+                        // From / To Field
+                        VStack(spacing: 0) {
+                            if isFromUser {
+                                HStack {
+                                    Text("To")
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                    Spacer()
+                                    TextField("Who did you send it to?", text: $recipient)
+                                        .font(.system(size: 15, design: .rounded))
+                                        .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
+                                        .multilineTextAlignment(.trailing)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            } else {
+                                HStack {
+                                    Text("From")
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                    Spacer()
+                                    TextField("Who sent this card?", text: $sender)
+                                        .font(.system(size: 15, design: .rounded))
+                                        .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
+                                        .multilineTextAlignment(.trailing)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            }
+                            
+                            Divider()
+                                .padding(.leading, 16)
+                        }
+                        
+                        // Occasion Picker
+                        VStack(spacing: 0) {
+                            Picker("Occasion", selection: $occasion) {
+                                Text("Select...").tag("")
+                                ForEach(occasionOptions, id: \.self) { option in
+                                    Text(option).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(Color(red: 0.85, green: 0.55, blue: 0.55))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            
+                            Divider()
+                                .padding(.leading, 16)
+                        }
+                        
+                        // Date Toggle
+                        VStack(spacing: 0) {
+                            Toggle("Add date received", isOn: $hasDateReceived)
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                .tint(Color(red: 0.85, green: 0.55, blue: 0.55))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            
+                            if hasDateReceived {
+                                Divider()
+                                    .padding(.leading, 16)
+                                
+                                DatePicker(
+                                    "Date Received",
+                                    selection: $dateReceived,
+                                    displayedComponents: .date
+                                )
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
+                                .foregroundColor(Color(red: 0.5, green: 0.45, blue: 0.45))
+                                .tint(Color(red: 0.85, green: 0.55, blue: 0.55))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white)
+                            .shadow(color: Color(red: 0.5, green: 0.4, blue: 0.4).opacity(0.08), radius: 8, x: 0, y: 4)
+                    )
+                    
+                    // Notes Section
+                    VStack(spacing: 0) {
+                        // Section Header
+                        HStack {
+                            Text("Notes")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(Color(red: 0.40, green: 0.32, blue: 0.32))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 12)
+                        
+                        // Notes Text Editor
+                        ZStack(alignment: .topLeading) {
+                            if notes.isEmpty {
+                                Text("Add notes about this card...")
+                                    .font(.system(size: 15, design: .rounded))
+                                    .foregroundColor(Color(red: 0.7, green: 0.65, blue: 0.65))
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 16)
+                            }
+                            
+                            TextEditor(text: $notes)
+                                .font(.system(size: 15, design: .rounded))
+                                .foregroundColor(Color(red: 0.3, green: 0.25, blue: 0.25))
+                                .frame(minHeight: 100)
+                                .scrollContentBackground(.hidden)
+                                .background(Color.clear)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                        }
+                        .padding(.bottom, 12)
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white)
+                            .shadow(color: Color(red: 0.5, green: 0.4, blue: 0.4).opacity(0.08), radius: 8, x: 0, y: 4)
+                    )
+                    
+                    Spacer(minLength: 100)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+            }
+            
+            // Save button at bottom
+            VStack(spacing: 0) {
+                Button(action: saveCard) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Save Card")
+                    }
+                    .font(.system(.headline, design: .rounded, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.40, green: 0.75, blue: 0.45),
+                                Color(red: 0.30, green: 0.65, blue: 0.40)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(16)
+                    .shadow(color: Color(red: 0.35, green: 0.70, blue: 0.40).opacity(0.35), radius: 8, x: 0, y: 4)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+    }
+    
     private func saveCard() {
         // Save card with images via ViewModel (images saved to file system)
         let card = viewModel.addCard(
             frontImage: frontImage,
             backImage: backImage,
             insideLeftImage: selectedCardType == .traditional ? insideLeftImage : nil,
-            insideRightImage: selectedCardType == .traditional ? insideRightImage : nil
+            insideRightImage: selectedCardType == .traditional ? insideRightImage : nil,
+            sender: sender.isEmpty ? nil : sender,
+            occasion: occasion.isEmpty ? nil : occasion,
+            dateReceived: hasDateReceived ? dateReceived : nil,
+            notes: notes.isEmpty ? nil : notes,
+            isFromUser: isFromUser,
+            recipient: isFromUser && !recipient.trimmingCharacters(in: .whitespaces).isEmpty ? recipient.trimmingCharacters(in: .whitespaces) : nil
         )
         
         savedCard = card
@@ -490,6 +773,13 @@ struct ScanCardFlowView: View {
         insideRightImage = nil
         savedCard = nil
         currentScanSide = .front
+        isFromUser = false
+        recipient = ""
+        sender = ""
+        occasion = ""
+        dateReceived = Date()
+        hasDateReceived = false
+        notes = ""
         
         withAnimation(.easeInOut(duration: 0.3)) {
             flowState = .selectingCardType

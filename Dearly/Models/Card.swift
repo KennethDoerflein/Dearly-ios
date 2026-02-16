@@ -48,6 +48,10 @@ final class Card {
     var aiErrorMessage: String?
     var aiErrorRetryable: Bool?
     
+    // Card origin -- true if the user sent this card to someone else
+    var isFromUser: Bool = false
+    var recipient: String?  // who the user sent it to (only when isFromUser == true)
+    
     // Version History
     var versionHistory: [CardVersionSnapshot]?
     
@@ -63,6 +67,8 @@ final class Card {
         occasion: String? = nil,
         dateReceived: Date? = nil,
         notes: String? = nil,
+        isFromUser: Bool = false,
+        recipient: String? = nil,
         versionHistory: [CardVersionSnapshot]? = nil
     ) {
         self.id = id
@@ -76,6 +82,8 @@ final class Card {
         self.occasion = occasion
         self.dateReceived = dateReceived
         self.notes = notes
+        self.isFromUser = isFromUser
+        self.recipient = recipient
         self.versionHistory = versionHistory
     }
     
