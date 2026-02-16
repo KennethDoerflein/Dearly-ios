@@ -11,7 +11,7 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @Binding var isOnboardingComplete: Bool
     
-    private let totalPages = 8
+    private let totalPages = 6
     
     var body: some View {
         ZStack {
@@ -44,15 +44,9 @@ struct OnboardingView: View {
                 OnboardingPageCloudSync(currentPage: $currentPage)
                     .tag(4)
                 
-                OnboardingPageAIFuture(currentPage: $currentPage)
+                // Pre-paywall screen
+                OnboardingPageGetStarted(currentPage: $currentPage, isOnboardingComplete: $isOnboardingComplete)
                     .tag(5)
-                
-                // Pre-paywall priming screens (CalAI strategy)
-                OnboardingPageTrialIntro(currentPage: $currentPage)
-                    .tag(6)
-                
-                OnboardingPageTrustBuild(currentPage: $currentPage, isOnboardingComplete: $isOnboardingComplete)
-                    .tag(7)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             
