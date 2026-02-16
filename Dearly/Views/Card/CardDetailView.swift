@@ -35,6 +35,17 @@ struct CardDetailView: View {
         viewModel.cards.first { $0.id == cardId }
     }
     
+    /// Flat cards (front + back only) have no inside pages
+    private var isFlatCard: Bool {
+        guard let card = card else { return false }
+        return card.insideLeftImageData == nil && card.insideRightImageData == nil
+    }
+    
+    /// Pages available for the page picker based on card type
+    private var availablePages: [CardPage] {
+        isFlatCard ? [.front, .back] : CardPage.allCases
+    }
+    
     var body: some View {
         ZStack {
             // Ethereal gradient background
@@ -185,7 +196,7 @@ struct CardDetailView: View {
                 
                 // Compact segmented control for page selection
                 Picker("", selection: $selectedPage) {
-                    ForEach(CardPage.allCases, id: \.self) { page in
+                    ForEach(availablePages, id: \.self) { page in
                         Text(page.rawValue).tag(page)
                     }
                 }
@@ -289,7 +300,7 @@ struct CardDetailView: View {
                 }
                 
                 // Subtle instruction text
-                Text("Drag to rotate • Pinch to zoom • Tap to open")
+                Text(isFlatCard ? "Drag to rotate • Pinch to zoom • Tap to flip" : "Drag to rotate • Pinch to zoom • Tap to open")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundColor(.white.opacity(0.35))
                     .padding(.bottom, 40)

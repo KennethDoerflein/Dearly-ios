@@ -81,6 +81,11 @@ struct AnimatedCardView: View {
     }
     private var isFacingFront: Bool { abs(normalizedRotationY) <= 90 }
     
+    /// Flat cards (front + back only) should not open like a book
+    private var isFlatCard: Bool {
+        card.insideLeftImageData == nil && card.insideRightImageData == nil
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -307,22 +312,27 @@ struct AnimatedCardView: View {
                 }
         )
         .simultaneousGesture(
-            // Tap gesture for opening/closing card - works at any zoom
+            // Tap gesture: folding cards open/close, flat cards flip front-to-back
             TapGesture()
                 .onEnded {
                     let impact = UIImpactFeedbackGenerator(style: .medium)
                     impact.impactOccurred()
                     
-                    withAnimation(
-                        .interpolatingSpring(
-                            mass: 1.0,
-                            stiffness: 100,
-                            damping: 15,
-                            initialVelocity: 0
-                        )
-                    ) {
-                        isOpen.toggle()
-                        xOffset = isOpen ? pageWidth / 2 : 0
+                    if isFlatCard {
+                        // Toggle selectedPage; animateToPage (via onChange) handles the rotation
+                        selectedPage = selectedPage == .front ? .back : .front
+                    } else {
+                        withAnimation(
+                            .interpolatingSpring(
+                                mass: 1.0,
+                                stiffness: 100,
+                                damping: 15,
+                                initialVelocity: 0
+                            )
+                        ) {
+                            isOpen.toggle()
+                            xOffset = isOpen ? pageWidth / 2 : 0
+                        }
                     }
                 }
         )
@@ -368,6 +378,11 @@ struct AnimatedCardView: View {
     }
     
     private func animateToPage(_ page: CardPage) {
+        // Flat cards only support front and back
+        if isFlatCard && (page == .insideLeft || page == .insideRight) {
+            return
+        }
+        
         let impact = UIImpactFeedbackGenerator(style: .medium)
         impact.impactOccurred()
         
