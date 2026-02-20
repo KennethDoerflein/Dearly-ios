@@ -8,9 +8,11 @@
 import SwiftUI
 import SwiftData
 import Combine
+import SuperwallKit
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @StateObject private var viewModel = CardsViewModel()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @State private var showingDevSettings = false
@@ -119,31 +121,67 @@ struct HomeView: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            Button(action: {
-                                let impact = UIImpactFeedbackGenerator(style: .light)
-                                impact.impactOccurred()
-                                viewModel.isShowingScanner = true
-                            }) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 60, height: 60)
-                                    .background(
-                                        ZStack {
-                                            // Warm rose gradient
-                                            LinearGradient(
-                                                gradient: Gradient(colors: [
-                                                    Color(red: 0.90, green: 0.55, blue: 0.55),
-                                                    Color(red: 0.78, green: 0.42, blue: 0.48)
-                                                ]),
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
+                            VStack(spacing: 8) {
+                                // Card count badge for free users
+                                if !subscriptionManager.isPremium {
+                                    Text("\(viewModel.cards.count)/\(SubscriptionManager.freeCardLimit)")
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundColor(viewModel.cards.count >= SubscriptionManager.freeCardLimit ?
+                                            Color(red: 0.85, green: 0.40, blue: 0.40) :
+                                            Color(red: 0.55, green: 0.48, blue: 0.48))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.white)
+                                                .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+                                        )
+                                }
+                                
+                                Button(action: {
+                                    let impact = UIImpactFeedbackGenerator(style: .light)
+                                    impact.impactOccurred()
+                                    
+                                    if subscriptionManager.canAddCard(currentCount: viewModel.cards.count) {
+                                        viewModel.isShowingScanner = true
+                                    } else {
+                                        Superwall.shared.register(placement: "scan_card") {
+                                            viewModel.isShowingScanner = true
                                         }
-                                    )
-                                    .clipShape(Circle())
-                                    .shadow(color: Color(red: 0.85, green: 0.50, blue: 0.50).opacity(0.4), radius: 16, x: 0, y: 8)
-                                    .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+                                    }
+                                }) {
+                                    ZStack {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .frame(width: 60, height: 60)
+                                            .background(
+                                                ZStack {
+                                                    LinearGradient(
+                                                        gradient: Gradient(colors: [
+                                                            Color(red: 0.90, green: 0.55, blue: 0.55),
+                                                            Color(red: 0.78, green: 0.42, blue: 0.48)
+                                                        ]),
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                }
+                                            )
+                                            .clipShape(Circle())
+                                            .shadow(color: Color(red: 0.85, green: 0.50, blue: 0.50).opacity(0.4), radius: 16, x: 0, y: 8)
+                                            .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+                                        
+                                        // Lock badge when at limit
+                                        if !subscriptionManager.isPremium && viewModel.cards.count >= SubscriptionManager.freeCardLimit {
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .padding(5)
+                                                .background(Circle().fill(Color(red: 0.65, green: 0.40, blue: 0.42)))
+                                                .offset(x: 22, y: -22)
+                                        }
+                                    }
+                                }
                             }
                             .padding(.trailing, 24)
                             .padding(.bottom, 24)
@@ -487,6 +525,7 @@ struct SearchBarView: View {
 // MARK: - Selection Toolbar
 struct SelectionToolbar: View {
     @ObservedObject var viewModel: CardsViewModel
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @Binding var showDeleteConfirmation: Bool
     
     var body: some View {
@@ -495,7 +534,14 @@ struct SelectionToolbar: View {
             Button(action: {
                 let impact = UIImpactFeedbackGenerator(style: .medium)
                 impact.impactOccurred()
-                viewModel.favoriteSelectedCards()
+                
+                if subscriptionManager.isPremium {
+                    viewModel.favoriteSelectedCards()
+                } else {
+                    Superwall.shared.register(placement: "favorite_card") {
+                        viewModel.favoriteSelectedCards()
+                    }
+                }
             }) {
                 VStack(spacing: 4) {
                     Image(systemName: "heart.fill")
@@ -887,5 +933,6 @@ struct SelectionCheckbox: View {
 
 #Preview {
     HomeView()
+        .environmentObject(SubscriptionManager.shared)
         .modelContainer(for: Card.self, inMemory: true)
 }

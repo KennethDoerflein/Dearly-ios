@@ -8,10 +8,12 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import SuperwallKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @ObservedObject var viewModel: CardsViewModel
     
     // Import state
@@ -39,6 +41,54 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Upgrade to Premium (only for free users)
+                if !subscriptionManager.isPremium {
+                    Section {
+                        Button(action: {
+                            let impact = UIImpactFeedbackGenerator(style: .medium)
+                            impact.impactOccurred()
+                            Superwall.shared.register(placement: "settings_upgrade")
+                        }) {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    Color(red: 0.90, green: 0.55, blue: 0.55),
+                                                    Color(red: 0.78, green: 0.42, blue: 0.48)
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 36, height: 36)
+                                    
+                                    Image(systemName: "crown.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Upgrade to Premium")
+                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.35, green: 0.28, blue: 0.28))
+                                    Text("Unlimited cards, favorites & cloud backup")
+                                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                                        .foregroundColor(Color(red: 0.55, green: 0.48, blue: 0.48))
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                
                 // iCloud Backup Section
                 iCloudBackupSection
                 
@@ -157,7 +207,29 @@ struct SettingsView: View {
     
     @ViewBuilder
     private var iCloudBackupSection: some View {
-        Section(header: Text("iCloud Backup")) {
+        Section(header: HStack {
+            Text("iCloud Backup")
+            if !subscriptionManager.isPremium {
+                Text("PREMIUM")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.85, green: 0.55, blue: 0.55),
+                                        Color(red: 0.75, green: 0.45, blue: 0.50)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+            }
+        }) {
             // Status row
             HStack {
                 Image(systemName: backupService.isICloudAvailable ? "icloud.fill" : "icloud.slash")
@@ -168,7 +240,11 @@ struct SettingsView: View {
                     Text("iCloud Backup")
                         .font(.body.weight(.medium))
                     
-                    if backupService.isICloudAvailable {
+                    if !subscriptionManager.isPremium {
+                        Text("Upgrade to Premium to enable cloud backup")
+                            .font(.caption)
+                            .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                    } else if backupService.isICloudAvailable {
                         if cloudCardCount > 0 {
                             Text("\(cloudCardCount) cards backed up • \(formatFileSize(cloudTotalSize))")
                                 .font(.caption)
@@ -197,7 +273,13 @@ struct SettingsView: View {
             
             // Backup Now button
             Button(action: {
-                performSync()
+                if subscriptionManager.isPremium {
+                    performSync()
+                } else {
+                    Superwall.shared.register(placement: "cloud_backup") {
+                        performSync()
+                    }
+                }
             }) {
                 HStack {
                     if isSyncing {
@@ -210,17 +292,29 @@ struct SettingsView: View {
                     Text(isSyncing ? "Backing Up..." : "Backup Now")
                     Spacer()
                     if !isSyncing {
-                        Text("\(viewModel.cards.count) cards")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if !subscriptionManager.isPremium {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                        } else {
+                            Text("\(viewModel.cards.count) cards")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
-            .disabled(!backupService.isICloudAvailable || isSyncing || isRestoring || viewModel.cards.isEmpty)
+            .disabled(subscriptionManager.isPremium && (!backupService.isICloudAvailable || isSyncing || isRestoring || viewModel.cards.isEmpty))
             
             // Restore button
             Button(action: {
-                showingRestoreOptions = true
+                if subscriptionManager.isPremium {
+                    showingRestoreOptions = true
+                } else {
+                    Superwall.shared.register(placement: "cloud_backup") {
+                        showingRestoreOptions = true
+                    }
+                }
             }) {
                 HStack {
                     if isRestoring {
@@ -232,17 +326,21 @@ struct SettingsView: View {
                     }
                     Text(isRestoring ? "Restoring..." : "Restore from Backup")
                     Spacer()
-                    if cloudCardCount > 0 && !isRestoring {
+                    if !subscriptionManager.isPremium {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(red: 0.85, green: 0.55, blue: 0.55))
+                    } else if cloudCardCount > 0 && !isRestoring {
                         Text("\(cloudCardCount) cards")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
-            .disabled(!backupService.isICloudAvailable || isSyncing || isRestoring || cloudCardCount == 0)
+            .disabled(subscriptionManager.isPremium && (!backupService.isICloudAvailable || isSyncing || isRestoring || cloudCardCount == 0))
             
-            // Delete from iCloud button
-            if cloudCardCount > 0 {
+            // Delete from iCloud button (only for premium users with existing backups)
+            if subscriptionManager.isPremium && cloudCardCount > 0 {
                 Button(action: {
                     showingDeleteCloudConfirmation = true
                 }) {
@@ -438,5 +536,6 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(viewModel: CardsViewModel())
+        .environmentObject(SubscriptionManager.shared)
         .modelContainer(for: Card.self, inMemory: true)
 }

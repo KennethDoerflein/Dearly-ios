@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import SuperwallKit
 
 struct CardItemView: View {
     let card: Card
@@ -15,6 +16,7 @@ struct CardItemView: View {
     var onTap: (() -> Void)?
     var onFavoriteToggle: (() -> Void)?
     
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var isPressed = false
 
     var body: some View {
@@ -38,7 +40,14 @@ struct CardItemView: View {
                             Button(action: {
                                 let impact = UIImpactFeedbackGenerator(style: .light)
                                 impact.impactOccurred()
-                                onFavoriteToggle?()
+                                
+                                if subscriptionManager.isPremium {
+                                    onFavoriteToggle?()
+                                } else {
+                                    Superwall.shared.register(placement: "favorite_card") {
+                                        onFavoriteToggle?()
+                                    }
+                                }
                             }) {
                                 ZStack {
                                     // Glow effect when favorited
@@ -55,6 +64,16 @@ struct CardItemView: View {
                                         .shadow(color: .black.opacity(0.25), radius: 3, x: 0, y: 1)
                                         .scaleEffect(card.isFavorite ? 1.15 : 1.0)
                                         .animation(.spring(response: 0.35, dampingFraction: 0.5), value: card.isFavorite)
+                                    
+                                    // Premium lock badge for free users
+                                    if !subscriptionManager.isPremium && !card.isFavorite {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(3)
+                                            .background(Circle().fill(Color.black.opacity(0.5)))
+                                            .offset(x: 10, y: 10)
+                                    }
                                 }
                                 .padding(10)
                             }
@@ -186,5 +205,6 @@ struct CardBackView: View {
             .padding()
             .frame(height: 350)
     }
+    .environmentObject(SubscriptionManager.shared)
     .modelContainer(for: Card.self, inMemory: true)
 }

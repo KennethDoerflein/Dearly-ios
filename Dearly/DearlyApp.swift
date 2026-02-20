@@ -12,6 +12,7 @@ import SuperwallKit
 @main
 struct DearlyApp: App {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
     
     /// SwiftData model container - configured for LOCAL storage only (no CloudKit sync)
     /// We use iCloud Drive for manual backup instead of automatic CloudKit sync
@@ -61,6 +62,7 @@ struct DearlyApp: App {
             .onOpenURL { url in
                 handleOpenURL(url)
             }
+            .environmentObject(subscriptionManager)
         }
         .modelContainer(modelContainer)
     }

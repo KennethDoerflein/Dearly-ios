@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import SuperwallKit
 
 enum CardPage: String, CaseIterable {
     case front = "Front"
@@ -18,6 +19,7 @@ enum CardPage: String, CaseIterable {
 struct CardDetailView: View {
     let cardId: UUID
     @ObservedObject var viewModel: CardsViewModel
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @Environment(\.dismiss) private var dismiss
     @State private var resetTrigger = false
     @State private var showingMetadataEdit = false
@@ -83,14 +85,24 @@ struct CardDetailView: View {
                             impact.impactOccurred()
                             
                             guard let card = card else { return }
-                            viewModel.toggleFavorite(for: card)
                             
-                            // Heart burst animation
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-                                heartScale = 1.3
+                            let performToggle = {
+                                viewModel.toggleFavorite(for: card)
+                                
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                                    heartScale = 1.3
+                                }
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
+                                    heartScale = 1.0
+                                }
                             }
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.1)) {
-                                heartScale = 1.0
+                            
+                            if subscriptionManager.isPremium {
+                                performToggle()
+                            } else {
+                                Superwall.shared.register(placement: "favorite_card") {
+                                    performToggle()
+                                }
                             }
                         }
                         
@@ -532,5 +544,6 @@ struct FloatingParticles: View {
     let card = Card()
     viewModel.cards.append(card)
     return CardDetailView(cardId: card.id, viewModel: viewModel)
+        .environmentObject(SubscriptionManager.shared)
         .modelContainer(for: Card.self, inMemory: true)
 }
