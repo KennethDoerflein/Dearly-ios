@@ -145,8 +145,11 @@ struct HomeView: View {
                                     if subscriptionManager.canAddCard(currentCount: viewModel.cards.count) {
                                         viewModel.isShowingScanner = true
                                     } else {
-                                        Superwall.shared.register(placement: "scan_card") {
-                                            viewModel.isShowingScanner = true
+                                        Task {
+                                            try? await SuperwallService.shared.triggerPaywall(event: "scan_card")
+                                            if subscriptionManager.canAddCard(currentCount: viewModel.cards.count) {
+                                                await MainActor.run { viewModel.isShowingScanner = true }
+                                            }
                                         }
                                     }
                                 }) {
@@ -538,8 +541,11 @@ struct SelectionToolbar: View {
                 if subscriptionManager.isPremium {
                     viewModel.favoriteSelectedCards()
                 } else {
-                    Superwall.shared.register(placement: "favorite_card") {
-                        viewModel.favoriteSelectedCards()
+                    Task {
+                        try? await SuperwallService.shared.triggerPaywall(event: "favorite_card")
+                        if subscriptionManager.isPremium {
+                            await MainActor.run { viewModel.favoriteSelectedCards() }
+                        }
                     }
                 }
             }) {

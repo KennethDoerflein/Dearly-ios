@@ -38,7 +38,9 @@ struct DearlyApp: App {
         }
         
         // Now we can use self - configure Superwall SDK
-        Superwall.configure(apiKey: "pk_qgy7lKimDkwfz7eHprOZq")
+        DispatchQueue.main.async {
+            SuperwallService.shared.configure(apiKey: "pk_qgy7lKimDkwfz7eHprOZq")
+        }
         
         // Clean up legacy UserDefaults data from old storage system
         clearLegacyUserDefaultsData()
@@ -57,6 +59,11 @@ struct DearlyApp: App {
                         .onAppear {
                             print("🚀 DearlyApp: Showing OnboardingView (onboarding NOT completed)")
                         }
+                }
+            }
+            .overlay {
+                if subscriptionManager.isLocked {
+                    LockedOverlayView()
                 }
             }
             .onOpenURL { url in

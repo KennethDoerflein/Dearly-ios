@@ -169,6 +169,7 @@ class CardsViewModel: ObservableObject {
             repository?.deleteCard(card)
             cards.removeAll { $0.id == card.id }
         }
+        SubscriptionManager.shared.evaluateLockState(currentUsage: cards.count)
         exitSelectionMode()
     }
     
@@ -234,6 +235,7 @@ class CardsViewModel: ObservableObject {
         
         repository?.addCard(card)
         cards.insert(card, at: 0) // Add to beginning for newest first
+        SubscriptionManager.shared.evaluateLockState(currentUsage: cards.count)
         
         return card
     }
@@ -241,6 +243,7 @@ class CardsViewModel: ObservableObject {
     func deleteCard(_ card: Card) {
         repository?.deleteCard(card)
         cards.removeAll { $0.id == card.id }
+        SubscriptionManager.shared.evaluateLockState(currentUsage: cards.count)
     }
     
     func updateCard(_ card: Card) {
@@ -267,5 +270,6 @@ class CardsViewModel: ObservableObject {
     
     func loadCards() {
         cards = repository?.fetchAllCards() ?? []
+        SubscriptionManager.shared.evaluateLockState(currentUsage: cards.count)
     }
 }

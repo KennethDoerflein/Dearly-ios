@@ -44,8 +44,11 @@ struct CardItemView: View {
                                 if subscriptionManager.isPremium {
                                     onFavoriteToggle?()
                                 } else {
-                                    Superwall.shared.register(placement: "favorite_card") {
-                                        onFavoriteToggle?()
+                                    Task {
+                                        try? await SuperwallService.shared.triggerPaywall(event: "favorite_card")
+                                        if subscriptionManager.isPremium {
+                                            await MainActor.run { onFavoriteToggle?() }
+                                        }
                                     }
                                 }
                             }) {

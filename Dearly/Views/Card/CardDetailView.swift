@@ -100,8 +100,11 @@ struct CardDetailView: View {
                             if subscriptionManager.isPremium {
                                 performToggle()
                             } else {
-                                Superwall.shared.register(placement: "favorite_card") {
-                                    performToggle()
+                                Task {
+                                    try? await SuperwallService.shared.triggerPaywall(event: "favorite_card")
+                                    if subscriptionManager.isPremium {
+                                        await MainActor.run { performToggle() }
+                                    }
                                 }
                             }
                         }

@@ -47,7 +47,9 @@ struct SettingsView: View {
                         Button(action: {
                             let impact = UIImpactFeedbackGenerator(style: .medium)
                             impact.impactOccurred()
-                            Superwall.shared.register(placement: "settings_upgrade")
+                            Task {
+                                try? await SuperwallService.shared.triggerPaywall(event: "settings_upgrade")
+                            }
                         }) {
                             HStack(spacing: 14) {
                                 ZStack {
@@ -276,8 +278,11 @@ struct SettingsView: View {
                 if subscriptionManager.isPremium {
                     performSync()
                 } else {
-                    Superwall.shared.register(placement: "cloud_backup") {
-                        performSync()
+                    Task {
+                        try? await SuperwallService.shared.triggerPaywall(event: "cloud_backup")
+                        if subscriptionManager.isPremium {
+                            await MainActor.run { performSync() }
+                        }
                     }
                 }
             }) {
@@ -311,8 +316,11 @@ struct SettingsView: View {
                 if subscriptionManager.isPremium {
                     showingRestoreOptions = true
                 } else {
-                    Superwall.shared.register(placement: "cloud_backup") {
-                        showingRestoreOptions = true
+                    Task {
+                        try? await SuperwallService.shared.triggerPaywall(event: "cloud_backup")
+                        if subscriptionManager.isPremium {
+                            await MainActor.run { showingRestoreOptions = true }
+                        }
                     }
                 }
             }) {
